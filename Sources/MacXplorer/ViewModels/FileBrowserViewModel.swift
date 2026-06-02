@@ -9,6 +9,8 @@ final class FileBrowserViewModel: ObservableObject {
     @Published var pathText: String
     @Published var filterText = ""
     @Published var selectedItemID: FileItem.ID?
+    @Published var renameRequest: FileItem?
+    @Published var trashRequest: FileItem?
     @Published var showHiddenFiles = false {
         didSet {
             reload()
@@ -189,6 +191,22 @@ final class FileBrowserViewModel: ObservableObject {
         }
     }
 
+    func requestRenameSelected() {
+        guard let selectedItem else {
+            return
+        }
+
+        renameRequest = selectedItem
+    }
+
+    func requestTrashSelected() {
+        guard let selectedItem else {
+            return
+        }
+
+        trashRequest = selectedItem
+    }
+
     func createFolder() async {
         do {
             let createdURL = try await fileSystem.createFolder(named: "New Folder", in: currentURL)
@@ -238,6 +256,14 @@ final class FileBrowserViewModel: ObservableObject {
 
     func clearError() {
         errorMessage = nil
+    }
+
+    func clearRenameRequest() {
+        renameRequest = nil
+    }
+
+    func clearTrashRequest() {
+        trashRequest = nil
     }
 
     private func homeSubfolder(_ name: String) -> URL {

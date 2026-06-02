@@ -41,6 +41,23 @@ struct ContentView: View {
                 renameItem = nil
             }
         }
+        .onChange(of: model.renameRequest) { _, item in
+            guard let item else {
+                return
+            }
+
+            renameItem = item
+            renameText = item.name
+            model.clearRenameRequest()
+        }
+        .onChange(of: model.trashRequest) { _, item in
+            guard let item else {
+                return
+            }
+
+            itemPendingTrash = item
+            model.clearTrashRequest()
+        }
         .confirmationDialog(
             "Move item to Trash?",
             isPresented: Binding(
