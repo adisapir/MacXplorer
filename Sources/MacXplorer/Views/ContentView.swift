@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -143,74 +144,81 @@ private struct BrowserToolbar: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Button {
-                    model.goBack()
-                } label: {
-                    Image(systemName: "chevron.left.circle.fill")
-                }
-                .disabled(!model.canGoBack)
-                .help("Back")
+            HStack(spacing: 10) {
+                ToolbarButtonGroup {
+                    ToolbarIconButton(
+                        systemName: "chevron.backward",
+                        help: "Go back to the previous folder",
+                        isDisabled: !model.canGoBack
+                    ) {
+                        model.goBack()
+                    }
 
-                Button {
-                    model.goForward()
-                } label: {
-                    Image(systemName: "chevron.right.circle.fill")
-                }
-                .disabled(!model.canGoForward)
-                .help("Forward")
+                    ToolbarIconButton(
+                        systemName: "chevron.forward",
+                        help: "Go forward to the next folder",
+                        isDisabled: !model.canGoForward
+                    ) {
+                        model.goForward()
+                    }
 
-                Button {
-                    model.goUp()
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                }
-                .disabled(!model.canGoUp)
-                .help("Up")
+                    ToolbarIconButton(
+                        systemName: "arrow.up.to.line.compact",
+                        help: "Go to the enclosing folder",
+                        isDisabled: !model.canGoUp
+                    ) {
+                        model.goUp()
+                    }
 
-                Button {
-                    model.reload()
-                } label: {
-                    Image(systemName: "arrow.clockwise.circle.fill")
+                    ToolbarIconButton(
+                        systemName: "arrow.clockwise",
+                        help: "Reload the current folder"
+                    ) {
+                        model.reload()
+                    }
                 }
-                .help("Reload")
 
-                Divider()
-                    .frame(height: 22)
+                ToolbarButtonGroup {
+                    ToolbarIconButton(
+                        systemName: "folder.badge.plus",
+                        help: "Create a new folder in the current folder"
+                    ) {
+                        Task { await model.createFolder() }
+                    }
 
-                Button {
-                    Task { await model.createFolder() }
-                } label: {
-                    Image(systemName: "folder.fill.badge.plus")
+                    ToolbarIconButton(
+                        systemName: "terminal",
+                        help: "Open Terminal at the current folder"
+                    ) {
+                        model.openCurrentFolderInTerminal()
+                    }
+
+                    ToolbarIconButton(
+                        systemName: "arrow.up.forward.square",
+                        help: "Reveal the selected item in Finder"
+                    ) {
+                        model.revealSelectedInFinder()
+                    }
                 }
-                .help("New Folder")
-
-                Button {
-                    model.openCurrentFolderInTerminal()
-                } label: {
-                    Image(systemName: "terminal.fill")
-                }
-                .help("Open in Terminal")
-
-                Button {
-                    model.revealSelectedInFinder()
-                } label: {
-                    Image(systemName: "arrow.up.forward.app.fill")
-                }
-                .help("Reveal in Finder")
 
                 Spacer(minLength: 12)
 
                 HStack(spacing: 6) {
-                    Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                    Image(systemName: "line.3.horizontal.decrease.circle")
                         .foregroundStyle(.secondary)
                     TextField("Filter current folder", text: $model.filterText)
                         .textFieldStyle(.plain)
                         .frame(width: 220)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
+                .font(.system(size: 13, weight: .medium))
+                .padding(.horizontal, 11)
+                .padding(.vertical, 7)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(.separator.opacity(0.6), lineWidth: 1)
+                }
+                .modernTooltip("Filter items shown in the current folder")
             }
             .symbolRenderingMode(.hierarchical)
 
@@ -228,9 +236,11 @@ private struct BrowserToolbar: View {
                 Button {
                     model.copySelectedPath()
                 } label: {
-                    Image(systemName: "doc.on.doc.fill")
+                    Image(systemName: "doc.on.doc")
                 }
-                .help("Copy Path")
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .modernTooltip("Copy the selected item path, or the current folder path if nothing is selected")
             }
             .symbolRenderingMode(.hierarchical)
             .padding(.horizontal, 10)
@@ -247,6 +257,215 @@ private struct BrowserToolbar: View {
         .onExitCommand {
             pathFocused = false
         }
+    }
+}
+
+private struct ToolbarButtonGroup<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(spacing: 4) {
+            content
+        }
+        .padding(3)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(.separator.opacity(0.55), lineWidth: 1)
+        }
+    }
+}
+
+private struct ToolbarIconButton: View {
+    let systemName: String
+    let help: String
+    var isDisabled = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: 26, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isDisabled ? .tertiary : .primary)
+        .disabled(isDisabled)
+        .modernTooltip(help)
+    }
+}
+
+private struct ModernTooltipModifier: ViewModifier {
+    let text: String
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovering = false
+    @State private var isPresented = false
+    @State private var hoverTask: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                isHovering = hovering
+                hoverTask?.cancel()
+
+                if hovering {
+                    hoverTask = Task {
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        guard !Task.isCancelled else {
+                            return
+                        }
+
+                        await MainActor.run {
+                            if isHovering {
+                                isPresented = true
+                            }
+                        }
+                    }
+                } else {
+                    isPresented = false
+                }
+            }
+            .background(
+                TooltipAnchorView(text: text, isPresented: isPresented, colorScheme: colorScheme)
+            )
+    }
+}
+
+private struct TooltipAnchorView: NSViewRepresentable {
+    let text: String
+    let isPresented: Bool
+    let colorScheme: ColorScheme
+
+    func makeNSView(context: Context) -> TooltipAnchorNSView {
+        TooltipAnchorNSView()
+    }
+
+    func updateNSView(_ nsView: TooltipAnchorNSView, context: Context) {
+        nsView.update(text: text, isPresented: isPresented, colorScheme: colorScheme)
+    }
+}
+
+private final class TooltipAnchorNSView: NSView {
+    private var text = ""
+    private var isPresented = false
+    private var colorScheme: ColorScheme = .light
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateTooltipVisibility()
+    }
+
+    func update(text: String, isPresented: Bool, colorScheme: ColorScheme) {
+        self.text = text
+        self.isPresented = isPresented
+        self.colorScheme = colorScheme
+        updateTooltipVisibility()
+    }
+
+    private func updateTooltipVisibility() {
+        guard isPresented, window != nil else {
+            TooltipWindowPresenter.shared.hide(anchor: self)
+            return
+        }
+
+        TooltipWindowPresenter.shared.show(text: text, anchor: self, colorScheme: colorScheme)
+    }
+}
+
+@MainActor
+private final class TooltipWindowPresenter {
+    static let shared = TooltipWindowPresenter()
+
+    private var panel: NSPanel?
+    private weak var currentAnchor: NSView?
+
+    func show(text: String, anchor: NSView, colorScheme: ColorScheme) {
+        currentAnchor = anchor
+
+        let rootView = TooltipBubble(text: text)
+            .environment(\.colorScheme, colorScheme)
+        let hostingView = NSHostingView(rootView: rootView)
+        hostingView.setFrameSize(hostingView.fittingSize)
+
+        let panel = panel ?? makePanel()
+        panel.contentView = hostingView
+
+        let screenFrame = anchor.window?.convertToScreen(anchor.convert(anchor.bounds, to: nil)) ?? .zero
+        let panelSize = hostingView.fittingSize
+        let origin = NSPoint(
+            x: screenFrame.midX - (panelSize.width / 2),
+            y: screenFrame.maxY + 8
+        )
+
+        panel.setFrame(NSRect(origin: origin, size: panelSize), display: true)
+        panel.orderFrontRegardless()
+        self.panel = panel
+    }
+
+    func hide(anchor: NSView) {
+        guard currentAnchor === anchor else {
+            return
+        }
+
+        panel?.orderOut(nil)
+        currentAnchor = nil
+    }
+
+    private func makePanel() -> NSPanel {
+        let panel = NSPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.level = .popUpMenu
+        panel.collectionBehavior = [.transient, .ignoresCycle]
+        return panel
+    }
+}
+
+private struct TooltipBubble: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(foregroundColor)
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: 280)
+            .background(backgroundColor, in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(borderColor, lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.28), radius: 14, y: 7)
+    }
+
+    private var backgroundColor: Color {
+        colorScheme == .dark ? Color(nsColor: .windowBackgroundColor) : Color(nsColor: .textColor)
+    }
+
+    private var foregroundColor: Color {
+        colorScheme == .dark ? Color(nsColor: .labelColor) : Color(nsColor: .windowBackgroundColor)
+    }
+
+    private var borderColor: Color {
+        colorScheme == .dark ? Color(nsColor: .separatorColor) : Color(nsColor: .separatorColor).opacity(0.75)
+    }
+}
+
+private extension View {
+    func modernTooltip(_ text: String) -> some View {
+        modifier(ModernTooltipModifier(text: text))
     }
 }
 
