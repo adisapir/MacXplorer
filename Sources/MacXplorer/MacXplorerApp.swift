@@ -7,11 +7,14 @@ struct MacXplorerApp: App {
     @StateObject private var model = FileBrowserViewModel(
         fileSystem: LocalFileSystemService()
     )
+    @StateObject private var settings = AppSettings()
 
     var body: some Scene {
         WindowGroup("MacXplorer") {
             ContentView()
                 .environmentObject(model)
+                .environmentObject(settings)
+                .preferredColorScheme(settings.appearance.colorScheme)
                 .frame(minWidth: 980, minHeight: 620)
         }
         .commands {
@@ -115,6 +118,12 @@ struct MacXplorerApp: App {
                 }
                 .keyboardShortcut("c", modifiers: [.command, .option])
             }
+        }
+
+        Settings {
+            SettingsView()
+                .environmentObject(settings)
+                .preferredColorScheme(settings.appearance.colorScheme)
         }
     }
 }
