@@ -121,11 +121,13 @@ private struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .symbolRenderingMode(.hierarchical)
         .safeAreaInset(edge: .bottom) {
             Toggle(isOn: $model.showHiddenFiles) {
-                Label("Hidden", systemImage: "eye")
+                Label("Hidden", systemImage: "eye.fill")
             }
             .toggleStyle(.button)
+            .symbolRenderingMode(.hierarchical)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
         }
@@ -142,7 +144,7 @@ private struct BrowserToolbar: View {
                 Button {
                     model.goBack()
                 } label: {
-                    Image(systemName: "chevron.left")
+                    Image(systemName: "chevron.left.circle.fill")
                 }
                 .disabled(!model.canGoBack)
                 .help("Back")
@@ -150,7 +152,7 @@ private struct BrowserToolbar: View {
                 Button {
                     model.goForward()
                 } label: {
-                    Image(systemName: "chevron.right")
+                    Image(systemName: "chevron.right.circle.fill")
                 }
                 .disabled(!model.canGoForward)
                 .help("Forward")
@@ -158,7 +160,7 @@ private struct BrowserToolbar: View {
                 Button {
                     model.goUp()
                 } label: {
-                    Image(systemName: "arrow.up")
+                    Image(systemName: "arrow.up.circle.fill")
                 }
                 .disabled(!model.canGoUp)
                 .help("Up")
@@ -166,7 +168,7 @@ private struct BrowserToolbar: View {
                 Button {
                     model.reload()
                 } label: {
-                    Image(systemName: "arrow.clockwise")
+                    Image(systemName: "arrow.clockwise.circle.fill")
                 }
                 .help("Reload")
 
@@ -176,28 +178,28 @@ private struct BrowserToolbar: View {
                 Button {
                     Task { await model.createFolder() }
                 } label: {
-                    Image(systemName: "folder.badge.plus")
+                    Image(systemName: "folder.fill.badge.plus")
                 }
                 .help("New Folder")
 
                 Button {
                     model.openSelectedInTerminal()
                 } label: {
-                    Image(systemName: "terminal")
+                    Image(systemName: "terminal.fill")
                 }
                 .help("Open in Terminal")
 
                 Button {
                     model.revealSelectedInFinder()
                 } label: {
-                    Image(systemName: "arrow.up.forward.app")
+                    Image(systemName: "arrow.up.forward.app.fill")
                 }
                 .help("Reveal in Finder")
 
                 Spacer(minLength: 12)
 
                 HStack(spacing: 6) {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
+                    Image(systemName: "line.3.horizontal.decrease.circle.fill")
                         .foregroundStyle(.secondary)
                     TextField("Filter current folder", text: $model.filterText)
                         .textFieldStyle(.plain)
@@ -207,6 +209,7 @@ private struct BrowserToolbar: View {
                 .padding(.vertical, 6)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
             }
+            .symbolRenderingMode(.hierarchical)
 
             HStack(spacing: 8) {
                 Image(systemName: "point.topleft.down.curvedto.point.bottomright.up")
@@ -222,10 +225,11 @@ private struct BrowserToolbar: View {
                 Button {
                     model.copySelectedPath()
                 } label: {
-                    Image(systemName: "doc.on.doc")
+                    Image(systemName: "doc.on.doc.fill")
                 }
                 .help("Copy Path")
             }
+            .symbolRenderingMode(.hierarchical)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(.background)
@@ -257,9 +261,7 @@ private struct FileTableView: View {
             )) {
                 TableColumn("Name") { item in
                     HStack(spacing: 8) {
-                        Image(systemName: item.opensInApp ? "folder.fill" : "doc")
-                            .foregroundStyle(item.opensInApp ? .blue : .secondary)
-                            .frame(width: 18)
+                        FileItemIcon(item: item)
 
                         Text(item.name)
                             .lineLimit(1)
@@ -412,6 +414,53 @@ private struct StatusBar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(.bar)
+    }
+}
+
+private struct FileItemIcon: View {
+    let item: FileItem
+
+    var body: some View {
+        Group {
+            if item.isAlias && item.opensInApp {
+                FolderAliasIcon()
+            } else if item.opensInApp {
+                Image(systemName: "folder.fill")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.blue)
+            } else if item.isPackage {
+                Image(systemName: "shippingbox.fill")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.orange)
+            } else {
+                Image(systemName: "doc.richtext.fill")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.system(size: 17, weight: .semibold))
+        .frame(width: 22, height: 18)
+    }
+}
+
+private struct FolderAliasIcon: View {
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Image(systemName: "folder.fill")
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.blue)
+
+            Text("A")
+                .font(.system(size: 8, weight: .black, design: .rounded))
+                .foregroundStyle(.white)
+                .frame(width: 12, height: 12)
+                .background(.indigo, in: Circle())
+                .overlay {
+                    Circle()
+                        .stroke(.background, lineWidth: 1.3)
+                }
+                .offset(x: 4, y: 3)
+        }
     }
 }
 

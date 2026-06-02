@@ -59,10 +59,10 @@ final class FileBrowserViewModel: ObservableObject {
 
     var sidebarLocations: [SidebarLocation] {
         let builtInFavorites: [SidebarLocation] = [
-            SidebarLocation(name: "Home", url: FileManager.default.homeDirectoryForCurrentUser, group: .favorites, systemImage: "house"),
+            SidebarLocation(name: "Home", url: FileManager.default.homeDirectoryForCurrentUser, group: .favorites, systemImage: "house.fill"),
             SidebarLocation(name: "Desktop", url: homeSubfolder("Desktop"), group: .favorites, systemImage: "desktopcomputer"),
-            SidebarLocation(name: "Documents", url: homeSubfolder("Documents"), group: .favorites, systemImage: "doc.text"),
-            SidebarLocation(name: "Downloads", url: homeSubfolder("Downloads"), group: .favorites, systemImage: "arrow.down.circle")
+            SidebarLocation(name: "Documents", url: homeSubfolder("Documents"), group: .favorites, systemImage: "folder.fill"),
+            SidebarLocation(name: "Downloads", url: homeSubfolder("Downloads"), group: .favorites, systemImage: "arrow.down.circle.fill")
         ]
 
         var locations = builtInFavorites
@@ -74,7 +74,7 @@ final class FileBrowserViewModel: ObservableObject {
                     name: sidebarName(for: url),
                     url: url,
                     group: .favorites,
-                    systemImage: "pin",
+                    systemImage: "folder.fill",
                     isPinned: true
                 )
             )
@@ -92,7 +92,7 @@ final class FileBrowserViewModel: ObservableObject {
                     name: values?.volumeName ?? volume.lastPathComponent,
                     url: volume,
                     group: .devices,
-                    systemImage: "externaldrive"
+                    systemImage: "externaldrive.fill"
                 )
             )
         }
