@@ -12,10 +12,27 @@ enum SystemActions {
 
     static func openInTerminal(_ url: URL) {
         let directory = directoryURL(for: url)
+        guard let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") else {
+            return openInTerminalWithAppleScript(directory)
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.open([directory], withApplicationAt: terminalURL, configuration: configuration) { _, error in
+            if error != nil {
+                openInTerminalWithAppleScript(directory)
+            }
+        }
+    }
+
+    private static func openInTerminalWithAppleScript(_ directory: URL) {
         let script = """
+        set terminalPath to "\(escapedForAppleScript(directory.path))"
+        set terminalCommand to "cd " & quoted form of terminalPath
         tell application "Terminal"
             activate
-            do script "cd " & quoted form of "\(escapedForAppleScript(directory.path))"
+            do script terminalCommand
+            activate
         end tell
         """
 

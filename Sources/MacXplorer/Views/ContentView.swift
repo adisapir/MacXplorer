@@ -66,9 +66,12 @@ struct ContentView: View {
             )
         ) {
             Button("Move to Trash", role: .destructive) {
+                guard let pendingItem = itemPendingTrash else {
+                    return
+                }
+
                 Task {
-                    model.selectedItemID = itemPendingTrash?.id
-                    await model.moveSelectedToTrash()
+                    await model.moveItemToTrash(pendingItem)
                     itemPendingTrash = nil
                 }
             }
@@ -101,9 +104,9 @@ private struct SidebarView: View {
                     Label(location.name, systemImage: location.systemImage)
                         .tag(location.url)
                         .contextMenu {
-                            if location.isPinned {
+                            if location.canRemoveFromFavorites {
                                 Button("Remove from Favorites") {
-                                    model.unpinFavorite(location.url)
+                                    model.removeFavorite(location.url)
                                 }
                             }
                         }
@@ -183,7 +186,7 @@ private struct BrowserToolbar: View {
                 .help("New Folder")
 
                 Button {
-                    model.openSelectedInTerminal()
+                    model.openCurrentFolderInTerminal()
                 } label: {
                     Image(systemName: "terminal.fill")
                 }

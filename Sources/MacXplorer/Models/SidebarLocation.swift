@@ -13,13 +13,13 @@ struct SidebarLocation: Identifiable, Hashable {
     let url: URL
     let group: Group
     let systemImage: String
-    let isPinned: Bool
+    let canRemoveFromFavorites: Bool
 
-    init(name: String, url: URL, group: Group, systemImage: String, isPinned: Bool = false) {
+    init(name: String, url: URL, group: Group, systemImage: String, canRemoveFromFavorites: Bool = false) {
         self.name = name
         self.url = url
         self.group = group
         self.systemImage = systemImage
-        self.isPinned = isPinned
+        self.canRemoveFromFavorites = canRemoveFromFavorites
     }
 }

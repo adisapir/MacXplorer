@@ -3,12 +3,14 @@ import Foundation
 @MainActor
 final class FileBrowserViewModel: ObservableObject {
     private static let pinnedFavoritesKey = "PinnedFavoritePaths"
+    private static let removedBuiltInFavoritesKey = "RemovedBuiltInFavoritePaths"
 
     @Published private(set) var currentURL: URL
     @Published private(set) var items: [FileItem] = []
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var pinnedFavoriteURLs: [URL] = []
+    @Published private(set) var removedBuiltInFavoriteURLs: [URL] = []
     @Published var pathText: String
     @Published var filterText = ""
     @Published var selectedItemID: FileItem.ID?
@@ -31,6 +33,7 @@ final class FileBrowserViewModel: ObservableObject {
         self.currentURL = homeURL
         self.pathText = homeURL.path
         self.pinnedFavoriteURLs = Self.loadPinnedFavorites()
+        self.removedBuiltInFavoriteURLs = Self.loadRemovedBuiltInFavorites()
         reload()
     }
 
@@ -58,14 +61,9 @@ final class FileBrowserViewModel: ObservableObject {
     var canGoUp: Bool { currentURL.path != "/" }
 
     var sidebarLocations: [SidebarLocation] {
-        let builtInFavorites: [SidebarLocation] = [
-            SidebarLocation(name: "Home", url: FileManager.default.homeDirectoryForCurrentUser, group: .favorites, systemImage: "house.fill"),
-            SidebarLocation(name: "Desktop", url: homeSubfolder("Desktop"), group: .favorites, systemImage: "desktopcomputer"),
-            SidebarLocation(name: "Documents", url: homeSubfolder("Documents"), group: .favorites, systemImage: "folder.fill"),
-            SidebarLocation(name: "Downloads", url: homeSubfolder("Downloads"), group: .favorites, systemImage: "arrow.down.circle.fill")
-        ]
-
-        var locations = builtInFavorites
+        let builtInFavorites = builtInFavoriteLocations()
+        let removedBuiltInURLs = Set(removedBuiltInFavoriteURLs.map(\.standardizedFileURL))
+        var locations = builtInFavorites.filter { !removedBuiltInURLs.contains($0.url.standardizedFileURL) }
         let builtInFavoriteURLs = Set(builtInFavorites.map { $0.url.standardizedFileURL })
 
         for url in pinnedFavoriteURLs where !builtInFavoriteURLs.contains(url.standardizedFileURL) {
@@ -75,7 +73,7 @@ final class FileBrowserViewModel: ObservableObject {
                     url: url,
                     group: .favorites,
                     systemImage: "folder.fill",
-                    isPinned: true
+                    canRemoveFromFavorites: true
                 )
             )
         }
@@ -98,6 +96,15 @@ final class FileBrowserViewModel: ObservableObject {
         }
 
         return locations
+    }
+
+    private func builtInFavoriteLocations() -> [SidebarLocation] {
+        [
+            SidebarLocation(name: "Home", url: FileManager.default.homeDirectoryForCurrentUser, group: .favorites, systemImage: "house.fill", canRemoveFromFavorites: true),
+            SidebarLocation(name: "Desktop", url: homeSubfolder("Desktop"), group: .favorites, systemImage: "desktopcomputer", canRemoveFromFavorites: true),
+            SidebarLocation(name: "Documents", url: homeSubfolder("Documents"), group: .favorites, systemImage: "folder.fill", canRemoveFromFavorites: true),
+            SidebarLocation(name: "Downloads", url: homeSubfolder("Downloads"), group: .favorites, systemImage: "arrow.down.circle.fill", canRemoveFromFavorites: true)
+        ]
     }
 
     func reload() {
@@ -253,7 +260,13 @@ final class FileBrowserViewModel: ObservableObject {
             return
         }
 
-        guard !isBuiltInFavorite(standardizedURL), !pinnedFavoriteURLs.contains(standardizedURL) else {
+        if isBuiltInFavorite(standardizedURL) {
+            removedBuiltInFavoriteURLs.removeAll { $0.standardizedFileURL == standardizedURL }
+            saveRemovedBuiltInFavorites()
+            return
+        }
+
+        guard !pinnedFavoriteURLs.contains(standardizedURL) else {
             return
         }
 
@@ -261,9 +274,23 @@ final class FileBrowserViewModel: ObservableObject {
         savePinnedFavorites()
     }
 
+    func removeFavorite(_ url: URL) {
+        let standardizedURL = url.standardizedFileURL
+        if isBuiltInFavorite(standardizedURL) {
+            guard !removedBuiltInFavoriteURLs.contains(standardizedURL) else {
+                return
+            }
+
+            removedBuiltInFavoriteURLs.append(standardizedURL)
+            saveRemovedBuiltInFavorites()
+        } else {
+            pinnedFavoriteURLs.removeAll { $0.standardizedFileURL == standardizedURL }
+            savePinnedFavorites()
+        }
+    }
+
     func unpinFavorite(_ url: URL) {
-        pinnedFavoriteURLs.removeAll { $0.standardizedFileURL == url.standardizedFileURL }
-        savePinnedFavorites()
+        removeFavorite(url)
     }
 
     func canPinFolder(_ item: FileItem) -> Bool {
@@ -272,7 +299,11 @@ final class FileBrowserViewModel: ObservableObject {
         }
 
         let url = navigationURL.standardizedFileURL
-        return !isBuiltInFavorite(url) && !pinnedFavoriteURLs.contains(url)
+        if isBuiltInFavorite(url) {
+            return removedBuiltInFavoriteURLs.contains(url)
+        }
+
+        return !pinnedFavoriteURLs.contains(url)
     }
 
     func createFolder() async {
@@ -302,8 +333,12 @@ final class FileBrowserViewModel: ObservableObject {
             return
         }
 
+        await moveItemToTrash(selectedItem)
+    }
+
+    func moveItemToTrash(_ item: FileItem) async {
         do {
-            try await fileSystem.moveToTrash(selectedItem.url)
+            try await fileSystem.moveToTrash(item.url)
             reload()
         } catch {
             errorMessage = error.localizedDescription
@@ -312,6 +347,10 @@ final class FileBrowserViewModel: ObservableObject {
 
     func revealSelectedInFinder() {
         SystemActions.revealInFinder(selectedItem?.url ?? currentURL)
+    }
+
+    func openCurrentFolderInTerminal() {
+        SystemActions.openInTerminal(currentURL)
     }
 
     func openSelectedInTerminal() {
@@ -352,18 +391,17 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     private func isBuiltInFavorite(_ url: URL) -> Bool {
-        let builtInURLs = [
-            FileManager.default.homeDirectoryForCurrentUser,
-            homeSubfolder("Desktop"),
-            homeSubfolder("Documents"),
-            homeSubfolder("Downloads")
-        ].map { $0.standardizedFileURL }
+        let builtInURLs = builtInFavoriteLocations().map { $0.url.standardizedFileURL }
 
         return builtInURLs.contains(url.standardizedFileURL)
     }
 
     private func savePinnedFavorites() {
         UserDefaults.standard.set(pinnedFavoriteURLs.map(\.path), forKey: Self.pinnedFavoritesKey)
+    }
+
+    private func saveRemovedBuiltInFavorites() {
+        UserDefaults.standard.set(removedBuiltInFavoriteURLs.map(\.path), forKey: Self.removedBuiltInFavoritesKey)
     }
 
     private static func loadPinnedFavorites() -> [URL] {
@@ -378,6 +416,21 @@ final class FileBrowserViewModel: ObservableObject {
 
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                return nil
+            }
+
+            seen.insert(url.path)
+            return url
+        }
+    }
+
+    private static func loadRemovedBuiltInFavorites() -> [URL] {
+        let paths = UserDefaults.standard.stringArray(forKey: removedBuiltInFavoritesKey) ?? []
+        var seen = Set<String>()
+
+        return paths.compactMap { path in
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            guard !seen.contains(url.path) else {
                 return nil
             }
 
