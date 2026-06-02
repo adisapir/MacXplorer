@@ -4,6 +4,7 @@ protocol FileSystemService: Sendable {
     func listDirectory(at url: URL, showHiddenFiles: Bool) async throws -> [FileItem]
     func createFolder(named name: String, in directory: URL) async throws -> URL
     func renameItem(at url: URL, to newName: String) async throws -> URL
+    func moveItems(_ urls: [URL], to directory: URL) async throws -> [URL]
     func moveToTrash(_ url: URL) async throws
 }
 
@@ -87,6 +88,34 @@ struct LocalFileSystemService: FileSystemService {
 
             try FileManager.default.moveItem(at: url, to: destination)
             return destination
+        }.value
+    }
+
+    func moveItems(_ urls: [URL], to directory: URL) async throws -> [URL] {
+        try await Task.detached(priority: .userInitiated) {
+            let destinationDirectory = directory.standardizedFileURL
+            var moves: [(source: URL, destination: URL)] = []
+
+            for url in urls {
+                let source = url.standardizedFileURL
+                let destination = destinationDirectory.appendingPathComponent(source.lastPathComponent)
+
+                guard source.deletingLastPathComponent() != destinationDirectory else {
+                    continue
+                }
+
+                guard !FileManager.default.fileExists(atPath: destination.path) else {
+                    throw FileSystemError.itemAlreadyExists(destination.lastPathComponent)
+                }
+
+                moves.append((source, destination))
+            }
+
+            for move in moves {
+                try FileManager.default.moveItem(at: move.source, to: move.destination)
+            }
+
+            return moves.map(\.destination)
         }.value
     }
 

@@ -35,7 +35,7 @@ struct MacXplorerApp: App {
                 Button("Rename") {
                     model.requestRenameSelected()
                 }
-                .keyboardShortcut(.return, modifiers: [])
+                .keyboardShortcut(.space, modifiers: [])
                 .disabled(model.selectedItem == nil)
 
                 Button("Move to Trash") {
@@ -59,7 +59,21 @@ struct MacXplorerApp: App {
                 .keyboardShortcut("r", modifiers: [.command, .shift])
             }
 
-            CommandGroup(after: .pasteboard) {
+            CommandGroup(replacing: .pasteboard) {
+                Button("Cut") {
+                    model.cutSelectedItem()
+                }
+                .keyboardShortcut("x", modifiers: .command)
+                .disabled(!model.canCutSelectedItem)
+
+                Button("Paste") {
+                    Task { await model.pasteCutItems() }
+                }
+                .keyboardShortcut("v", modifiers: .command)
+                .disabled(!model.canPasteCutItems)
+
+                Divider()
+
                 Button("Copy Path") {
                     model.copySelectedPath()
                 }

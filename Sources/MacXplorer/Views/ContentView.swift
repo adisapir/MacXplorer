@@ -487,7 +487,12 @@ private struct FileTableView: View {
 
                         Text(item.name)
                             .lineLimit(1)
+
+                        Spacer(minLength: 0)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .opacity(model.isCut(item) ? 0.45 : 1)
+                    .overlay { rowClickTarget(for: item) }
                     .draggable(item.url)
                 }
                 .width(min: 260, ideal: 360)
@@ -495,6 +500,8 @@ private struct FileTableView: View {
                 TableColumn("Kind") { item in
                     Text(item.displayKind)
                         .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .overlay { rowClickTarget(for: item) }
                 }
                 .width(min: 120, ideal: 180)
 
@@ -502,12 +509,16 @@ private struct FileTableView: View {
                     Text(item.displaySize)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .overlay { rowClickTarget(for: item) }
                 }
                 .width(min: 80, ideal: 110)
 
                 TableColumn("Modified") { item in
                     Text(item.modifiedAt.map(Self.dateFormatter.string(from:)) ?? "")
                         .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .overlay { rowClickTarget(for: item) }
                 }
                 .width(min: 150, ideal: 180)
             }
@@ -516,6 +527,12 @@ private struct FileTableView: View {
                     model.selectedItemID = selection.first
                     model.openSelected()
                 }
+
+                Button("Cut") {
+                    model.selectedItemID = selection.first
+                    model.cutSelectedItem()
+                }
+                .disabled(selection.isEmpty)
 
                 Button("Rename") {
                     startRename(selection: selection)
@@ -604,6 +621,15 @@ private struct FileTableView: View {
         return model.canPinFolder(item)
     }
 
+    private func rowClickTarget(for item: FileItem) -> some View {
+        TableCellClickTarget {
+            model.selectedItemID = item.id
+        } onOpen: {
+            model.selectedItemID = item.id
+            model.openSelected()
+        }
+    }
+
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -636,6 +662,38 @@ private struct StatusBar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(.bar)
+    }
+}
+
+private struct TableCellClickTarget: NSViewRepresentable {
+    let onSelect: () -> Void
+    let onOpen: () -> Void
+
+    func makeNSView(context: Context) -> TableCellClickTargetNSView {
+        let view = TableCellClickTargetNSView()
+        view.onSelect = onSelect
+        view.onOpen = onOpen
+        return view
+    }
+
+    func updateNSView(_ nsView: TableCellClickTargetNSView, context: Context) {
+        nsView.onSelect = onSelect
+        nsView.onOpen = onOpen
+    }
+}
+
+private final class TableCellClickTargetNSView: NSView {
+    var onSelect: () -> Void = {}
+    var onOpen: () -> Void = {}
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        onSelect()
+
+        if event.clickCount >= 2 {
+            onOpen()
+        }
     }
 }
 

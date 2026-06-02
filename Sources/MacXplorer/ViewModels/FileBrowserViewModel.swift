@@ -11,6 +11,7 @@ final class FileBrowserViewModel: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var pinnedFavoriteURLs: [URL] = []
     @Published private(set) var removedBuiltInFavoriteURLs: [URL] = []
+    @Published private(set) var cutItemURLs: [URL] = []
     @Published var pathText: String
     @Published var filterText = ""
     @Published var selectedItemID: FileItem.ID?
@@ -59,6 +60,8 @@ final class FileBrowserViewModel: ObservableObject {
     var canGoBack: Bool { !backStack.isEmpty }
     var canGoForward: Bool { !forwardStack.isEmpty }
     var canGoUp: Bool { currentURL.path != "/" }
+    var canCutSelectedItem: Bool { selectedItem != nil }
+    var canPasteCutItems: Bool { !cutItemURLs.isEmpty }
 
     var sidebarLocations: [SidebarLocation] {
         let builtInFavorites = builtInFavoriteLocations()
@@ -339,10 +342,37 @@ final class FileBrowserViewModel: ObservableObject {
     func moveItemToTrash(_ item: FileItem) async {
         do {
             try await fileSystem.moveToTrash(item.url)
+            clearCutItems(containing: [item.url])
             reload()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func cutSelectedItem() {
+        guard let selectedItem else {
+            return
+        }
+
+        cutItemURLs = [selectedItem.url.standardizedFileURL]
+    }
+
+    func pasteCutItems() async {
+        guard !cutItemURLs.isEmpty else {
+            return
+        }
+
+        do {
+            let movedURLs = try await fileSystem.moveItems(cutItemURLs, to: currentURL)
+            clearCutItems(containing: cutItemURLs)
+            reload(selecting: movedURLs.first)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func isCut(_ item: FileItem) -> Bool {
+        cutItemURLs.contains(item.url.standardizedFileURL)
     }
 
     func revealSelectedInFinder() {
@@ -402,6 +432,11 @@ final class FileBrowserViewModel: ObservableObject {
 
     private func saveRemovedBuiltInFavorites() {
         UserDefaults.standard.set(removedBuiltInFavoriteURLs.map(\.path), forKey: Self.removedBuiltInFavoritesKey)
+    }
+
+    private func clearCutItems(containing urls: [URL]) {
+        let standardizedURLs = Set(urls.map(\.standardizedFileURL))
+        cutItemURLs.removeAll { standardizedURLs.contains($0.standardizedFileURL) }
     }
 
     private static func loadPinnedFavorites() -> [URL] {
