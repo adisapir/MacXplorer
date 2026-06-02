@@ -8,13 +8,41 @@ struct FileItem: Identifiable, Hashable, Sendable {
     let typeDescription: String
     let isDirectory: Bool
     let isPackage: Bool
+    let isAlias: Bool
+    let aliasTargetURL: URL?
+    let isAliasTargetDirectory: Bool
+    let isAliasTargetPackage: Bool
     let isHidden: Bool
     let size: Int64?
     let modifiedAt: Date?
 }
 
 extension FileItem {
+    var opensInApp: Bool {
+        (isDirectory && !isPackage) || (isAlias && isAliasTargetDirectory && !isAliasTargetPackage && aliasTargetURL != nil)
+    }
+
+    var navigationURL: URL? {
+        if isDirectory && !isPackage {
+            return url
+        }
+
+        if isAlias && isAliasTargetDirectory && !isAliasTargetPackage {
+            return aliasTargetURL
+        }
+
+        return nil
+    }
+
     var displayKind: String {
+        if isAlias && isAliasTargetDirectory && !isAliasTargetPackage {
+            return "Folder Alias"
+        }
+
+        if isAlias {
+            return typeDescription.isEmpty ? "Alias" : typeDescription
+        }
+
         if isPackage {
             return typeDescription.isEmpty ? "Package" : typeDescription
         }
@@ -27,7 +55,7 @@ extension FileItem {
     }
 
     var displaySize: String {
-        guard !isDirectory, let size else {
+        guard !opensInApp, let size else {
             return ""
         }
 

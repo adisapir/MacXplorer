@@ -233,6 +233,7 @@ private struct BrowserToolbar: View {
                 RoundedRectangle(cornerRadius: 7)
                     .stroke(.separator, lineWidth: 1)
             }
+            .macOS26GlassPanel()
         }
         .padding(12)
         .background(.bar)
@@ -256,8 +257,8 @@ private struct FileTableView: View {
             )) {
                 TableColumn("Name") { item in
                     HStack(spacing: 8) {
-                        Image(systemName: item.isDirectory && !item.isPackage ? "folder.fill" : "doc")
-                            .foregroundStyle(item.isDirectory && !item.isPackage ? .blue : .secondary)
+                        Image(systemName: item.opensInApp ? "folder.fill" : "doc")
+                            .foregroundStyle(item.opensInApp ? .blue : .secondary)
                             .frame(width: 18)
 
                         Text(item.name)
@@ -445,5 +446,16 @@ private struct RenameSheet: View {
             }
         }
         .padding(20)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func macOS26GlassPanel() -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 7))
+        } else {
+            self
+        }
     }
 }

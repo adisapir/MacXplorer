@@ -11,6 +11,7 @@ struct LocalFileSystemService: FileSystemService {
     private let keys: [URLResourceKey] = [
         .contentModificationDateKey,
         .fileSizeKey,
+        .isAliasFileKey,
         .isDirectoryKey,
         .isHiddenKey,
         .isPackageKey,
@@ -29,6 +30,10 @@ struct LocalFileSystemService: FileSystemService {
             let items = try urls.map { itemURL in
                 let values = try itemURL.resourceValues(forKeys: Set(keys))
                 let isDirectory = values.isDirectory ?? false
+                let aliasTargetURL = values.isAliasFile == true ? Self.aliasTargetURL(for: itemURL) : nil
+                let aliasTargetValues = aliasTargetURL.flatMap(Self.fileTypeValues)
+                let isAliasTargetDirectory = aliasTargetValues?.isDirectory ?? false
+                let isAliasTargetPackage = aliasTargetValues?.isPackage ?? false
 
                 return FileItem(
                     url: itemURL,
@@ -36,6 +41,10 @@ struct LocalFileSystemService: FileSystemService {
                     typeDescription: values.localizedTypeDescription ?? "",
                     isDirectory: isDirectory,
                     isPackage: values.isPackage ?? false,
+                    isAlias: values.isAliasFile ?? false,
+                    aliasTargetURL: aliasTargetURL,
+                    isAliasTargetDirectory: isAliasTargetDirectory,
+                    isAliasTargetPackage: isAliasTargetPackage,
                     isHidden: values.isHidden ?? false,
                     size: values.fileSize.map(Int64.init),
                     modifiedAt: values.contentModificationDate
@@ -43,8 +52,8 @@ struct LocalFileSystemService: FileSystemService {
             }
 
             return items.sorted { lhs, rhs in
-                if lhs.isDirectory != rhs.isDirectory {
-                    return lhs.isDirectory && !rhs.isDirectory
+                if lhs.opensInApp != rhs.opensInApp {
+                    return lhs.opensInApp && !rhs.opensInApp
                 }
 
                 return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
@@ -86,6 +95,14 @@ struct LocalFileSystemService: FileSystemService {
             var resultingURL: NSURL?
             try FileManager.default.trashItem(at: url, resultingItemURL: &resultingURL)
         }.value
+    }
+
+    private static func aliasTargetURL(for url: URL) -> URL? {
+        try? URL(resolvingAliasFileAt: url, options: [.withoutUI]).standardizedFileURL
+    }
+
+    private static func fileTypeValues(for url: URL) -> URLResourceValues? {
+        try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
     }
 }
 

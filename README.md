@@ -24,4 +24,10 @@ swift build
 swift run MacXplorer
 ```
 
-The first implementation targets macOS 15 and newer.
+## Platform support
+
+MacXplorer targets macOS 15 and newer. macOS 26-specific features should be added behind availability checks so the app can adopt newer system polish without dropping macOS 15 support.
+
+Current macOS 26 enhancements:
+
+- The path bar uses the system glass effect on macOS 26 and newer.

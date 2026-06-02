@@ -203,8 +203,8 @@ final class FileBrowserViewModel: ObservableObject {
             return
         }
 
-        if selectedItem.isDirectory && !selectedItem.isPackage {
-            navigate(to: selectedItem.url)
+        if let navigationURL = selectedItem.navigationURL {
+            navigate(to: navigationURL)
         } else {
             SystemActions.open(selectedItem.url)
         }
@@ -227,11 +227,11 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     func pinSelectedFolderToFavorites() {
-        guard let selectedItem, selectedItem.isDirectory, !selectedItem.isPackage else {
+        guard let selectedItem, selectedItem.opensInApp else {
             return
         }
 
-        pinFavorite(selectedItem.url)
+        pinFavorite(selectedItem.navigationURL ?? selectedItem.url)
     }
 
     func pinDroppedFavorites(_ urls: [URL]) -> Bool {
@@ -267,11 +267,11 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     func canPinFolder(_ item: FileItem) -> Bool {
-        guard item.isDirectory, !item.isPackage else {
+        guard item.opensInApp, let navigationURL = item.navigationURL else {
             return false
         }
 
-        let url = item.url.standardizedFileURL
+        let url = navigationURL.standardizedFileURL
         return !isBuiltInFavorite(url) && !pinnedFavoriteURLs.contains(url)
     }
 
