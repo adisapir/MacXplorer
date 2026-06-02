@@ -478,8 +478,8 @@ private struct FileTableView: View {
     var body: some View {
         ZStack {
             Table(model.filteredItems, selection: Binding(
-                get: { model.selectedItemID },
-                set: { model.selectedItemID = $0 }
+                get: { model.selectedItemIDs },
+                set: { model.selectedItemIDs = $0 }
             )) {
                 TableColumn("Name") { item in
                     HStack(spacing: 8) {
@@ -524,13 +524,13 @@ private struct FileTableView: View {
             }
             .contextMenu(forSelectionType: FileItem.ID.self) { selection in
                 Button("Open") {
-                    model.selectedItemID = selection.first
+                    model.selectedItemIDs = selection
                     model.openSelected()
                 }
 
                 Button("Cut") {
-                    model.selectedItemID = selection.first
-                    model.cutSelectedItem()
+                    model.selectedItemIDs = selection
+                    model.cutSelectedItems()
                 }
                 .disabled(selection.isEmpty)
 
@@ -552,21 +552,21 @@ private struct FileTableView: View {
                 Divider()
 
                 Button("Copy Path") {
-                    model.selectedItemID = selection.first
+                    model.selectedItemIDs = selection
                     model.copySelectedPath()
                 }
 
                 Button("Open in Terminal") {
-                    model.selectedItemID = selection.first
+                    model.selectedItemIDs = selection
                     model.openSelectedInTerminal()
                 }
 
                 Button("Reveal in Finder") {
-                    model.selectedItemID = selection.first
+                    model.selectedItemIDs = selection
                     model.revealSelectedInFinder()
                 }
             } primaryAction: { selection in
-                model.selectedItemID = selection.first
+                model.selectedItemIDs = selection
                 model.openSelected()
             }
 
@@ -590,7 +590,7 @@ private struct FileTableView: View {
             return
         }
 
-        model.selectedItemID = id
+        model.selectedItemIDs = [id]
         renameItem = item
         renameText = item.name
     }
@@ -600,7 +600,7 @@ private struct FileTableView: View {
             return
         }
 
-        model.selectedItemID = id
+        model.selectedItemIDs = [id]
         itemPendingTrash = item
     }
 
@@ -609,7 +609,7 @@ private struct FileTableView: View {
             return
         }
 
-        model.selectedItemID = id
+        model.selectedItemIDs = [id]
         model.pinSelectedFolderToFavorites()
     }
 
@@ -622,10 +622,10 @@ private struct FileTableView: View {
     }
 
     private func rowClickTarget(for item: FileItem) -> some View {
-        TableCellClickTarget {
-            model.selectedItemID = item.id
+        TableCellClickTarget { mode in
+            model.select(item, mode: mode)
         } onOpen: {
-            model.selectedItemID = item.id
+            model.selectedItemIDs = [item.id]
             model.openSelected()
         }
     }
@@ -666,7 +666,7 @@ private struct StatusBar: View {
 }
 
 private struct TableCellClickTarget: NSViewRepresentable {
-    let onSelect: () -> Void
+    let onSelect: (SelectionMode) -> Void
     let onOpen: () -> Void
 
     func makeNSView(context: Context) -> TableCellClickTargetNSView {
@@ -683,13 +683,19 @@ private struct TableCellClickTarget: NSViewRepresentable {
 }
 
 private final class TableCellClickTargetNSView: NSView {
-    var onSelect: () -> Void = {}
+    var onSelect: (SelectionMode) -> Void = { _ in }
     var onOpen: () -> Void = {}
 
     override var acceptsFirstResponder: Bool { true }
 
     override func mouseDown(with event: NSEvent) {
-        onSelect()
+        if event.modifierFlags.contains(.shift) {
+            onSelect(.range)
+        } else if event.modifierFlags.contains(.command) {
+            onSelect(.toggle)
+        } else {
+            onSelect(.single)
+        }
 
         if event.clickCount >= 2 {
             onOpen()

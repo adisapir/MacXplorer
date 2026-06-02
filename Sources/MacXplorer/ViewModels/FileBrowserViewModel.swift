@@ -1,5 +1,11 @@
 import Foundation
 
+enum SelectionMode {
+    case single
+    case toggle
+    case range
+}
+
 @MainActor
 final class FileBrowserViewModel: ObservableObject {
     private static let pinnedFavoritesKey = "PinnedFavoritePaths"
@@ -14,7 +20,7 @@ final class FileBrowserViewModel: ObservableObject {
     @Published private(set) var cutItemURLs: [URL] = []
     @Published var pathText: String
     @Published var filterText = ""
-    @Published var selectedItemID: FileItem.ID?
+    @Published var selectedItemIDs: Set<FileItem.ID> = []
     @Published var renameRequest: FileItem?
     @Published var trashRequest: FileItem?
     @Published var showHiddenFiles = false {
@@ -27,6 +33,7 @@ final class FileBrowserViewModel: ObservableObject {
     private var backStack: [URL] = []
     private var forwardStack: [URL] = []
     private var loadGeneration = 0
+    private var selectionAnchorID: FileItem.ID?
 
     init(fileSystem: FileSystemService) {
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
@@ -50,17 +57,17 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     var selectedItem: FileItem? {
-        guard let selectedItemID else {
-            return nil
-        }
+        items.first { selectedItemIDs.contains($0.id) }
+    }
 
-        return items.first { $0.id == selectedItemID }
+    var selectedItems: [FileItem] {
+        items.filter { selectedItemIDs.contains($0.id) }
     }
 
     var canGoBack: Bool { !backStack.isEmpty }
     var canGoForward: Bool { !forwardStack.isEmpty }
     var canGoUp: Bool { currentURL.path != "/" }
-    var canCutSelectedItem: Bool { selectedItem != nil }
+    var canCutSelectedItem: Bool { !selectedItemIDs.isEmpty }
     var canPasteCutItems: Bool { !cutItemURLs.isEmpty }
 
     var sidebarLocations: [SidebarLocation] {
@@ -133,9 +140,15 @@ final class FileBrowserViewModel: ObservableObject {
 
                 items = loadedItems
                 if let itemID, loadedItems.contains(where: { $0.id == itemID }) {
-                    selectedItemID = itemID
+                    selectedItemIDs = [itemID]
+                    selectionAnchorID = itemID
                 } else {
-                    selectedItemID = nil
+                    selectedItemIDs = selectedItemIDs.filter { selectedID in
+                        loadedItems.contains { $0.id == selectedID }
+                    }
+                    if let selectionAnchorID, !selectedItemIDs.contains(selectionAnchorID) {
+                        self.selectionAnchorID = selectedItemIDs.first
+                    }
                 }
                 isLoading = false
             } catch {
@@ -144,7 +157,8 @@ final class FileBrowserViewModel: ObservableObject {
                 }
 
                 items = []
-                selectedItemID = nil
+                selectedItemIDs = []
+                selectionAnchorID = nil
                 isLoading = false
                 errorMessage = error.localizedDescription
             }
@@ -350,11 +364,11 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     func cutSelectedItem() {
-        guard let selectedItem else {
-            return
-        }
+        cutSelectedItems()
+    }
 
-        cutItemURLs = [selectedItem.url.standardizedFileURL]
+    func cutSelectedItems() {
+        cutItemURLs = selectedItems.map { $0.url.standardizedFileURL }
     }
 
     func pasteCutItems() async {
@@ -373,6 +387,23 @@ final class FileBrowserViewModel: ObservableObject {
 
     func isCut(_ item: FileItem) -> Bool {
         cutItemURLs.contains(item.url.standardizedFileURL)
+    }
+
+    func select(_ item: FileItem, mode: SelectionMode) {
+        switch mode {
+        case .single:
+            selectedItemIDs = [item.id]
+            selectionAnchorID = item.id
+        case .toggle:
+            if selectedItemIDs.contains(item.id) {
+                selectedItemIDs.remove(item.id)
+            } else {
+                selectedItemIDs.insert(item.id)
+            }
+            selectionAnchorID = item.id
+        case .range:
+            selectRange(through: item)
+        }
     }
 
     func revealSelectedInFinder() {
@@ -437,6 +468,21 @@ final class FileBrowserViewModel: ObservableObject {
     private func clearCutItems(containing urls: [URL]) {
         let standardizedURLs = Set(urls.map(\.standardizedFileURL))
         cutItemURLs.removeAll { standardizedURLs.contains($0.standardizedFileURL) }
+    }
+
+    private func selectRange(through item: FileItem) {
+        guard
+            let anchorID = selectionAnchorID ?? selectedItemIDs.first,
+            let anchorIndex = filteredItems.firstIndex(where: { $0.id == anchorID }),
+            let targetIndex = filteredItems.firstIndex(where: { $0.id == item.id })
+        else {
+            selectedItemIDs = [item.id]
+            selectionAnchorID = item.id
+            return
+        }
+
+        let bounds = min(anchorIndex, targetIndex)...max(anchorIndex, targetIndex)
+        selectedItemIDs = Set(bounds.map { filteredItems[$0].id })
     }
 
     private static func loadPinnedFavorites() -> [URL] {
