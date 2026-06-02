@@ -43,6 +43,13 @@ struct MacXplorerApp: App {
 
                 Divider()
 
+                Button("Add to Favorites") {
+                    model.pinSelectedFolderToFavorites()
+                }
+                .disabled(!(model.selectedItem.map(model.canPinFolder) ?? false))
+
+                Divider()
+
                 Button("Reveal in Finder") {
                     model.revealSelectedInFinder()
                 }

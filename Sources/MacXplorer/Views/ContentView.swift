@@ -100,7 +100,17 @@ private struct SidebarView: View {
                 ForEach(model.sidebarLocations.filter { $0.group == .favorites }) { location in
                     Label(location.name, systemImage: location.systemImage)
                         .tag(location.url)
+                        .contextMenu {
+                            if location.isPinned {
+                                Button("Remove from Favorites") {
+                                    model.unpinFavorite(location.url)
+                                }
+                            }
+                        }
                 }
+            }
+            .dropDestination(for: URL.self) { urls, _ in
+                model.pinDroppedFavorites(urls)
             }
 
             Section(SidebarLocation.Group.devices.rawValue) {
@@ -253,6 +263,7 @@ private struct FileTableView: View {
                         Text(item.name)
                             .lineLimit(1)
                     }
+                    .draggable(item.url)
                 }
                 .width(min: 260, ideal: 360)
 
@@ -288,6 +299,13 @@ private struct FileTableView: View {
                 Button("Move to Trash", role: .destructive) {
                     startTrash(selection: selection)
                 }
+
+                Divider()
+
+                Button("Add to Favorites") {
+                    pinFolder(selection: selection)
+                }
+                .disabled(!canPin(selection: selection))
 
                 Divider()
 
@@ -342,6 +360,23 @@ private struct FileTableView: View {
 
         model.selectedItemID = id
         itemPendingTrash = item
+    }
+
+    private func pinFolder(selection: Set<FileItem.ID>) {
+        guard let id = selection.first else {
+            return
+        }
+
+        model.selectedItemID = id
+        model.pinSelectedFolderToFavorites()
+    }
+
+    private func canPin(selection: Set<FileItem.ID>) -> Bool {
+        guard let id = selection.first, let item = model.items.first(where: { $0.id == id }) else {
+            return false
+        }
+
+        return model.canPinFolder(item)
     }
 
     private static let dateFormatter: DateFormatter = {

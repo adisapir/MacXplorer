@@ -2,10 +2,13 @@ import Foundation
 
 @MainActor
 final class FileBrowserViewModel: ObservableObject {
+    private static let pinnedFavoritesKey = "PinnedFavoritePaths"
+
     @Published private(set) var currentURL: URL
     @Published private(set) var items: [FileItem] = []
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var pinnedFavoriteURLs: [URL] = []
     @Published var pathText: String
     @Published var filterText = ""
     @Published var selectedItemID: FileItem.ID?
@@ -27,6 +30,7 @@ final class FileBrowserViewModel: ObservableObject {
         self.fileSystem = fileSystem
         self.currentURL = homeURL
         self.pathText = homeURL.path
+        self.pinnedFavoriteURLs = Self.loadPinnedFavorites()
         reload()
     }
 
@@ -54,12 +58,27 @@ final class FileBrowserViewModel: ObservableObject {
     var canGoUp: Bool { currentURL.path != "/" }
 
     var sidebarLocations: [SidebarLocation] {
-        var locations: [SidebarLocation] = [
+        let builtInFavorites: [SidebarLocation] = [
             SidebarLocation(name: "Home", url: FileManager.default.homeDirectoryForCurrentUser, group: .favorites, systemImage: "house"),
             SidebarLocation(name: "Desktop", url: homeSubfolder("Desktop"), group: .favorites, systemImage: "desktopcomputer"),
             SidebarLocation(name: "Documents", url: homeSubfolder("Documents"), group: .favorites, systemImage: "doc.text"),
             SidebarLocation(name: "Downloads", url: homeSubfolder("Downloads"), group: .favorites, systemImage: "arrow.down.circle")
         ]
+
+        var locations = builtInFavorites
+        let builtInFavoriteURLs = Set(builtInFavorites.map { $0.url.standardizedFileURL })
+
+        for url in pinnedFavoriteURLs where !builtInFavoriteURLs.contains(url.standardizedFileURL) {
+            locations.append(
+                SidebarLocation(
+                    name: sidebarName(for: url),
+                    url: url,
+                    group: .favorites,
+                    systemImage: "pin",
+                    isPinned: true
+                )
+            )
+        }
 
         let volumes = FileManager.default.mountedVolumeURLs(
             includingResourceValuesForKeys: [.volumeNameKey],
@@ -207,6 +226,55 @@ final class FileBrowserViewModel: ObservableObject {
         trashRequest = selectedItem
     }
 
+    func pinSelectedFolderToFavorites() {
+        guard let selectedItem, selectedItem.isDirectory, !selectedItem.isPackage else {
+            return
+        }
+
+        pinFavorite(selectedItem.url)
+    }
+
+    func pinDroppedFavorites(_ urls: [URL]) -> Bool {
+        var didPin = false
+
+        for url in urls where isDirectory(url) {
+            let beforeCount = pinnedFavoriteURLs.count
+            pinFavorite(url)
+            didPin = didPin || pinnedFavoriteURLs.count > beforeCount
+        }
+
+        return didPin
+    }
+
+    func pinFavorite(_ url: URL) {
+        let standardizedURL = url.standardizedFileURL
+        guard isDirectory(standardizedURL) else {
+            errorMessage = "Only folders can be added to Favorites."
+            return
+        }
+
+        guard !isBuiltInFavorite(standardizedURL), !pinnedFavoriteURLs.contains(standardizedURL) else {
+            return
+        }
+
+        pinnedFavoriteURLs.append(standardizedURL)
+        savePinnedFavorites()
+    }
+
+    func unpinFavorite(_ url: URL) {
+        pinnedFavoriteURLs.removeAll { $0.standardizedFileURL == url.standardizedFileURL }
+        savePinnedFavorites()
+    }
+
+    func canPinFolder(_ item: FileItem) -> Bool {
+        guard item.isDirectory, !item.isPackage else {
+            return false
+        }
+
+        let url = item.url.standardizedFileURL
+        return !isBuiltInFavorite(url) && !pinnedFavoriteURLs.contains(url)
+    }
+
     func createFolder() async {
         do {
             let createdURL = try await fileSystem.createFolder(named: "New Folder", in: currentURL)
@@ -268,5 +336,53 @@ final class FileBrowserViewModel: ObservableObject {
 
     private func homeSubfolder(_ name: String) -> URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(name)
+    }
+
+    private func sidebarName(for url: URL) -> String {
+        if url.lastPathComponent.isEmpty {
+            return url.path
+        }
+
+        return url.lastPathComponent
+    }
+
+    private func isDirectory(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
+    private func isBuiltInFavorite(_ url: URL) -> Bool {
+        let builtInURLs = [
+            FileManager.default.homeDirectoryForCurrentUser,
+            homeSubfolder("Desktop"),
+            homeSubfolder("Documents"),
+            homeSubfolder("Downloads")
+        ].map { $0.standardizedFileURL }
+
+        return builtInURLs.contains(url.standardizedFileURL)
+    }
+
+    private func savePinnedFavorites() {
+        UserDefaults.standard.set(pinnedFavoriteURLs.map(\.path), forKey: Self.pinnedFavoritesKey)
+    }
+
+    private static func loadPinnedFavorites() -> [URL] {
+        let paths = UserDefaults.standard.stringArray(forKey: pinnedFavoritesKey) ?? []
+        var seen = Set<String>()
+
+        return paths.compactMap { path in
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            guard !seen.contains(url.path) else {
+                return nil
+            }
+
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                return nil
+            }
+
+            seen.insert(url.path)
+            return url
+        }
     }
 }
