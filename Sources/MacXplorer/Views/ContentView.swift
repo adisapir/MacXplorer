@@ -203,7 +203,8 @@ private struct BrowserToolbar: View {
                 ToolbarButtonGroup {
                     ToolbarIconButton(
                         systemName: "folder.badge.plus",
-                        help: "Create a new folder in the current folder"
+                        help: "Create a new folder in the current folder",
+                        isDisabled: !model.canCreateFolder
                     ) {
                         Task { await model.createFolder() }
                     }
@@ -563,15 +564,17 @@ private struct FileTableView: View {
                     model.selectedItemIDs = selection
                     model.cutSelectedItems()
                 }
-                .disabled(selection.isEmpty)
+                .disabled(!canCut(selection: selection))
 
                 Button("Rename") {
                     startRename(selection: selection)
                 }
+                .disabled(!canEdit(selection: selection))
 
                 Button("Move to Trash", role: .destructive) {
                     startTrash(selection: selection)
                 }
+                .disabled(!canEdit(selection: selection))
 
                 Divider()
 
@@ -609,8 +612,8 @@ private struct FileTableView: View {
             } else if model.filteredItems.isEmpty {
                 ContentUnavailableView(
                     model.filterText.isEmpty ? "No Items" : "No Matching Items",
-                    systemImage: model.filterText.isEmpty ? "folder" : "magnifyingglass",
-                    description: Text(model.filterText.isEmpty ? "This folder is empty or unavailable." : "The current-folder filter did not match loaded items.")
+                    systemImage: model.filterText.isEmpty ? (model.isBrowsingNetwork ? "network.slash" : "folder") : "magnifyingglass",
+                    description: Text(emptyDescription)
                 )
             }
         }
@@ -652,6 +655,32 @@ private struct FileTableView: View {
         return model.canPinFolder(item)
     }
 
+    private func canCut(selection: Set<FileItem.ID>) -> Bool {
+        selection.contains { id in
+            model.items.first { $0.id == id }?.isNetworkLocation == false
+        }
+    }
+
+    private func canEdit(selection: Set<FileItem.ID>) -> Bool {
+        guard selection.count == 1, let id = selection.first, let item = model.items.first(where: { $0.id == id }) else {
+            return false
+        }
+
+        return !item.isNetworkLocation
+    }
+
+    private var emptyDescription: String {
+        if !model.filterText.isEmpty {
+            return "The current-folder filter did not match loaded items."
+        }
+
+        if model.isBrowsingNetwork {
+            return "No local SMB servers or mounted network volumes were found. Use Connect to Server for a known address."
+        }
+
+        return "This folder is empty or unavailable."
+    }
+
     private func rowClickTarget(for item: FileItem) -> some View {
         TableCellClickTarget { mode in
             model.select(item, mode: mode)
@@ -684,7 +713,7 @@ private struct StatusBar: View {
 
             Spacer()
 
-            Text(model.currentURL.path)
+            Text(model.currentLocationText)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .foregroundStyle(.secondary)
@@ -739,7 +768,11 @@ private struct FileItemIcon: View {
 
     var body: some View {
         Group {
-            if item.isAlias && item.opensInApp {
+            if item.isNetworkLocation {
+                Image(systemName: "server.rack")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.mint)
+            } else if item.isAlias && item.opensInApp {
                 FolderAliasIcon()
             } else if item.opensInApp {
                 Image(systemName: "folder.fill")

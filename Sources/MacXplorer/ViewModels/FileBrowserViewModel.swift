@@ -10,7 +10,7 @@ enum SelectionMode {
 final class FileBrowserViewModel: ObservableObject {
     private static let pinnedFavoritesKey = "PinnedFavoritePaths"
     private static let removedBuiltInFavoritesKey = "RemovedBuiltInFavoritePaths"
-    private static let networkRootURL = URL(fileURLWithPath: "/Network", isDirectory: true)
+    private static let networkRootURL = URL(string: "macxplorer://network")!
 
     @Published private(set) var currentURL: URL
     @Published private(set) var items: [FileItem] = []
@@ -32,6 +32,7 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     let fileSystem: any FileSystemService
+    private let networkBrowser = NetworkBrowserService()
     private var backStack: [URL] = []
     private var forwardStack: [URL] = []
     private var loadGeneration = 0
@@ -68,9 +69,18 @@ final class FileBrowserViewModel: ObservableObject {
 
     var canGoBack: Bool { !backStack.isEmpty }
     var canGoForward: Bool { !forwardStack.isEmpty }
-    var canGoUp: Bool { currentURL.path != "/" }
-    var canCutSelectedItem: Bool { !selectedItemIDs.isEmpty }
-    var canPasteCutItems: Bool { !cutItemURLs.isEmpty }
+    var canGoUp: Bool { currentURL.isFileURL && currentURL.path != "/" }
+    var canCreateFolder: Bool { currentURL.isFileURL }
+    var canCutSelectedItem: Bool { selectedItems.contains { !$0.isNetworkLocation } }
+    var canPasteCutItems: Bool { currentURL.isFileURL && !cutItemURLs.isEmpty }
+    var isBrowsingNetwork: Bool { currentURL == Self.networkRootURL }
+    var currentLocationText: String {
+        if currentURL == Self.networkRootURL {
+            return "Network"
+        }
+
+        return currentURL.isFileURL ? currentURL.path : currentURL.absoluteString
+    }
 
     var sidebarLocations: [SidebarLocation] {
         let builtInFavorites = builtInFavoriteLocations()
@@ -145,23 +155,18 @@ final class FileBrowserViewModel: ObservableObject {
 
         Task {
             do {
-                let loadedItems = try await fileSystem.listDirectory(at: target, showHiddenFiles: showHiddenFiles)
+                let loadedItems: [FileItem]
+                if target == Self.networkRootURL {
+                    loadedItems = await networkItems()
+                } else {
+                    loadedItems = try await fileSystem.listDirectory(at: target, showHiddenFiles: showHiddenFiles)
+                }
+
                 guard generation == loadGeneration else {
                     return
                 }
 
-                items = loadedItems
-                if let itemID, loadedItems.contains(where: { $0.id == itemID }) {
-                    selectedItemIDs = [itemID]
-                    selectionAnchorID = itemID
-                } else {
-                    selectedItemIDs = selectedItemIDs.filter { selectedID in
-                        loadedItems.contains { $0.id == selectedID }
-                    }
-                    if let selectionAnchorID, !selectedItemIDs.contains(selectionAnchorID) {
-                        self.selectionAnchorID = selectedItemIDs.first
-                    }
-                }
+                applyLoadedItems(loadedItems, selecting: itemID)
                 isLoading = false
             } catch {
                 guard generation == loadGeneration else {
@@ -189,7 +194,7 @@ final class FileBrowserViewModel: ObservableObject {
         }
 
         currentURL = url
-        pathText = url.path
+        pathText = url == Self.networkRootURL ? "Network" : url.path
         filterText = ""
         reload()
     }
@@ -222,6 +227,11 @@ final class FileBrowserViewModel: ObservableObject {
 
     func submitPath() {
         let expandedPath = NSString(string: pathText).expandingTildeInPath
+        if expandedPath.trimmingCharacters(in: .whitespacesAndNewlines).localizedCaseInsensitiveCompare("Network") == .orderedSame {
+            navigate(to: Self.networkRootURL)
+            return
+        }
+
         if let networkURL = Self.serverURL(from: expandedPath) {
             connectToServer(networkURL)
             return
@@ -254,6 +264,11 @@ final class FileBrowserViewModel: ObservableObject {
 
     func openSelected() {
         guard let selectedItem else {
+            return
+        }
+
+        if selectedItem.isNetworkLocation {
+            SystemActions.connectToServer(selectedItem.url)
             return
         }
 
@@ -398,7 +413,9 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     func cutSelectedItems() {
-        cutItemURLs = selectedItems.map { $0.url.standardizedFileURL }
+        cutItemURLs = selectedItems
+            .filter { !$0.isNetworkLocation }
+            .map { $0.url.standardizedFileURL }
     }
 
     func pasteCutItems() async {
@@ -471,6 +488,86 @@ final class FileBrowserViewModel: ObservableObject {
             navigate(to: url)
         } else {
             SystemActions.connectToServer(url)
+        }
+    }
+
+    private func networkItems() async -> [FileItem] {
+        let mountedRemoteVolumes = mountedRemoteVolumeItems()
+        let discoveredLocations = await networkBrowser.browse()
+        let mountedURLs = Set(mountedRemoteVolumes.map(\.url))
+        let discoveredItems = discoveredLocations
+            .filter { !mountedURLs.contains($0.url) }
+            .map { location in
+                FileItem(
+                    url: location.url,
+                    name: location.name,
+                    typeDescription: location.kind,
+                    isDirectory: false,
+                    isPackage: false,
+                    isAlias: false,
+                    aliasTargetURL: nil,
+                    isAliasTargetDirectory: false,
+                    isAliasTargetPackage: false,
+                    isHidden: false,
+                    size: nil,
+                    modifiedAt: nil,
+                    isNetworkLocation: true
+                )
+            }
+
+        return (mountedRemoteVolumes + discoveredItems).sorted { lhs, rhs in
+            lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    private func mountedRemoteVolumeItems() -> [FileItem] {
+        remoteMountedVolumes().map { volume in
+            let values = try? volume.resourceValues(forKeys: [.contentModificationDateKey, .volumeNameKey])
+            return FileItem(
+                url: volume,
+                name: values?.volumeName ?? volume.lastPathComponent,
+                typeDescription: "Mounted Network Volume",
+                isDirectory: true,
+                isPackage: false,
+                isAlias: false,
+                aliasTargetURL: nil,
+                isAliasTargetDirectory: false,
+                isAliasTargetPackage: false,
+                isHidden: false,
+                size: nil,
+                modifiedAt: values?.contentModificationDate
+            )
+        }
+    }
+
+    private func remoteMountedVolumes() -> [URL] {
+        let volumes = FileManager.default.mountedVolumeURLs(
+            includingResourceValuesForKeys: [.volumeIsLocalKey, .volumeNameKey],
+            options: [.skipHiddenVolumes]
+        ) ?? []
+
+        return volumes.filter { volume in
+            guard volume.path != "/" else {
+                return false
+            }
+
+            let values = try? volume.resourceValues(forKeys: [.volumeIsLocalKey])
+            return values?.volumeIsLocal == false
+        }
+    }
+
+    private func applyLoadedItems(_ loadedItems: [FileItem], selecting itemID: FileItem.ID?) {
+        items = loadedItems
+        if let itemID, loadedItems.contains(where: { $0.id == itemID }) {
+            selectedItemIDs = [itemID]
+            selectionAnchorID = itemID
+        } else {
+            selectedItemIDs = selectedItemIDs.filter { selectedID in
+                loadedItems.contains { $0.id == selectedID }
+            }
+            if let selectionAnchorID, !selectedItemIDs.contains(selectionAnchorID) {
+                self.selectionAnchorID = selectedItemIDs.first
+            }
         }
     }
 

@@ -15,11 +15,46 @@ struct FileItem: Identifiable, Hashable, Sendable {
     let isHidden: Bool
     let size: Int64?
     let modifiedAt: Date?
+    let isNetworkLocation: Bool
+
+    init(
+        url: URL,
+        name: String,
+        typeDescription: String,
+        isDirectory: Bool,
+        isPackage: Bool,
+        isAlias: Bool,
+        aliasTargetURL: URL?,
+        isAliasTargetDirectory: Bool,
+        isAliasTargetPackage: Bool,
+        isHidden: Bool,
+        size: Int64?,
+        modifiedAt: Date?,
+        isNetworkLocation: Bool = false
+    ) {
+        self.url = url
+        self.name = name
+        self.typeDescription = typeDescription
+        self.isDirectory = isDirectory
+        self.isPackage = isPackage
+        self.isAlias = isAlias
+        self.aliasTargetURL = aliasTargetURL
+        self.isAliasTargetDirectory = isAliasTargetDirectory
+        self.isAliasTargetPackage = isAliasTargetPackage
+        self.isHidden = isHidden
+        self.size = size
+        self.modifiedAt = modifiedAt
+        self.isNetworkLocation = isNetworkLocation
+    }
 }
 
 extension FileItem {
     var opensInApp: Bool {
-        (isDirectory && !isPackage) || (isAlias && isAliasTargetDirectory && !isAliasTargetPackage && aliasTargetURL != nil)
+        guard !isNetworkLocation else {
+            return false
+        }
+
+        return (isDirectory && !isPackage) || (isAlias && isAliasTargetDirectory && !isAliasTargetPackage && aliasTargetURL != nil)
     }
 
     var navigationURL: URL? {
@@ -35,6 +70,10 @@ extension FileItem {
     }
 
     var displayKind: String {
+        if isNetworkLocation {
+            return typeDescription.isEmpty ? "Network Location" : typeDescription
+        }
+
         if isAlias && isAliasTargetDirectory && !isAliasTargetPackage {
             return "Folder Alias"
         }

@@ -29,6 +29,7 @@ struct MacXplorerApp: App {
                     Task { await model.createFolder() }
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(!model.canCreateFolder)
 
                 Divider()
 
@@ -36,13 +37,13 @@ struct MacXplorerApp: App {
                     model.requestRenameSelected()
                 }
                 .keyboardShortcut(.space, modifiers: [])
-                .disabled(model.selectedItem == nil)
+                .disabled(model.selectedItem?.isNetworkLocation ?? true)
 
                 Button("Move to Trash") {
                     model.requestTrashSelected()
                 }
                 .keyboardShortcut(.delete, modifiers: .command)
-                .disabled(model.selectedItem == nil)
+                .disabled(model.selectedItem?.isNetworkLocation ?? true)
 
                 Divider()
 

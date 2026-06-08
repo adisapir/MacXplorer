@@ -48,7 +48,7 @@ enum SystemActions {
 
     static func copyPath(_ url: URL) {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(url.path, forType: .string)
+        NSPasteboard.general.setString(url.isFileURL ? url.path : url.absoluteString, forType: .string)
     }
 
     private static func directoryURL(for url: URL) -> URL {
