@@ -9,11 +9,7 @@ final class BrowserTabsViewModel: ObservableObject {
 
     @Published private(set) var tabs: [BrowserTab]
     @Published var selectedTabID: BrowserTab.ID
-    @Published var maximumConcurrentTabs: Int {
-        didSet {
-            maximumConcurrentTabs = Self.clampedTabLimit(maximumConcurrentTabs)
-        }
-    }
+    @Published private(set) var maximumConcurrentTabs: Int
 
     init(maximumConcurrentTabs: Int = 20) {
         let initialTab = Self.makeTab()
@@ -45,7 +41,7 @@ final class BrowserTabsViewModel: ObservableObject {
     }
 
     func updateMaximumConcurrentTabs(_ maximumConcurrentTabs: Int) {
-        self.maximumConcurrentTabs = maximumConcurrentTabs
+        self.maximumConcurrentTabs = Self.clampedTabLimit(maximumConcurrentTabs)
     }
 
     func selectTab(_ tabID: BrowserTab.ID) {

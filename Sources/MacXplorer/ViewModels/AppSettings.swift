@@ -14,7 +14,12 @@ final class AppSettings: ObservableObject {
 
     @Published var maximumConcurrentTabs: Int {
         didSet {
-            maximumConcurrentTabs = Self.clampedTabLimit(maximumConcurrentTabs)
+            let clampedValue = Self.clampedTabLimit(maximumConcurrentTabs)
+            guard maximumConcurrentTabs == clampedValue else {
+                maximumConcurrentTabs = clampedValue
+                return
+            }
+
             UserDefaults.standard.set(maximumConcurrentTabs, forKey: Self.maximumConcurrentTabsKey)
         }
     }
