@@ -119,6 +119,13 @@ struct MacXplorerApp: App {
                 Button("Downloads") {
                     model.navigate(to: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads"))
                 }
+
+                Divider()
+
+                Button("Connect to Server") {
+                    model.showConnectToServer()
+                }
+                .keyboardShortcut("k", modifiers: .command)
             }
 
             CommandMenu("Tools") {

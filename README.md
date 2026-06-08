@@ -6,6 +6,7 @@ Current implementation status:
 
 - SwiftPM macOS app target.
 - Sidebar for standard locations and mounted volumes.
+- Network section for browsing `/Network`, mounted network volumes, and Connect to Server.
 - Path/address bar with Back, Forward, Up, Reload, and Copy Path.
 - Main file table with name, kind, size, and modified date.
 - Current-folder filtering that does not rely on Spotlight.

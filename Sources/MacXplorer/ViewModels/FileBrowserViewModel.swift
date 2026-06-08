@@ -10,6 +10,7 @@ enum SelectionMode {
 final class FileBrowserViewModel: ObservableObject {
     private static let pinnedFavoritesKey = "PinnedFavoritePaths"
     private static let removedBuiltInFavoritesKey = "RemovedBuiltInFavoritePaths"
+    private static let networkRootURL = URL(fileURLWithPath: "/Network", isDirectory: true)
 
     @Published private(set) var currentURL: URL
     @Published private(set) var items: [FileItem] = []
@@ -18,6 +19,7 @@ final class FileBrowserViewModel: ObservableObject {
     @Published private(set) var pinnedFavoriteURLs: [URL] = []
     @Published private(set) var removedBuiltInFavoriteURLs: [URL] = []
     @Published private(set) var cutItemURLs: [URL] = []
+    @Published var isConnectToServerPresented = false
     @Published var pathText: String
     @Published var filterText = ""
     @Published var selectedItemIDs: Set<FileItem.ID> = []
@@ -88,19 +90,29 @@ final class FileBrowserViewModel: ObservableObject {
             )
         }
 
+        locations.append(
+            SidebarLocation(
+                name: "Browse Network",
+                url: Self.networkRootURL,
+                group: .network,
+                systemImage: "network"
+            )
+        )
+
         let volumes = FileManager.default.mountedVolumeURLs(
-            includingResourceValuesForKeys: [.volumeNameKey],
+            includingResourceValuesForKeys: [.volumeIsLocalKey, .volumeNameKey],
             options: [.skipHiddenVolumes]
         ) ?? []
 
         for volume in volumes where volume.path != "/" {
-            let values = try? volume.resourceValues(forKeys: [.volumeNameKey])
+            let values = try? volume.resourceValues(forKeys: [.volumeIsLocalKey, .volumeNameKey])
+            let isLocal = values?.volumeIsLocal ?? true
             locations.append(
                 SidebarLocation(
                     name: values?.volumeName ?? volume.lastPathComponent,
                     url: volume,
-                    group: .devices,
-                    systemImage: "externaldrive.fill"
+                    group: isLocal ? .devices : .network,
+                    systemImage: isLocal ? "externaldrive.fill" : "server.rack"
                 )
             )
         }
@@ -210,6 +222,11 @@ final class FileBrowserViewModel: ObservableObject {
 
     func submitPath() {
         let expandedPath = NSString(string: pathText).expandingTildeInPath
+        if let networkURL = Self.serverURL(from: expandedPath) {
+            connectToServer(networkURL)
+            return
+        }
+
         let url = URL(fileURLWithPath: expandedPath)
         var isDirectory: ObjCBool = false
 
@@ -220,6 +237,19 @@ final class FileBrowserViewModel: ObservableObject {
         }
 
         navigate(to: url)
+    }
+
+    func showConnectToServer() {
+        isConnectToServerPresented = true
+    }
+
+    func connectToServer(_ address: String) {
+        guard let serverURL = Self.serverURL(from: address) else {
+            errorMessage = "Enter a valid server address, such as smb://server/share."
+            return
+        }
+
+        connectToServer(serverURL)
     }
 
     func openSelected() {
@@ -434,6 +464,16 @@ final class FileBrowserViewModel: ObservableObject {
         trashRequest = nil
     }
 
+    private func connectToServer(_ url: URL) {
+        isConnectToServerPresented = false
+
+        if url.isFileURL {
+            navigate(to: url)
+        } else {
+            SystemActions.connectToServer(url)
+        }
+    }
+
     private func homeSubfolder(_ name: String) -> URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(name)
     }
@@ -518,5 +558,33 @@ final class FileBrowserViewModel: ObservableObject {
             seen.insert(url.path)
             return url
         }
+    }
+
+    private static func serverURL(from input: String) -> URL? {
+        let trimmedInput = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedInput.isEmpty else {
+            return nil
+        }
+
+        if trimmedInput.hasPrefix("/") || trimmedInput.hasPrefix("~") {
+            return nil
+        }
+
+        let address: String
+        if trimmedInput.contains("://") {
+            address = trimmedInput
+        } else {
+            address = "smb://\(trimmedInput)"
+        }
+
+        guard
+            let url = URL(string: address),
+            let scheme = url.scheme?.lowercased(),
+            ["smb", "afp", "nfs", "ftp", "file"].contains(scheme)
+        else {
+            return nil
+        }
+
+        return url
     }
 }

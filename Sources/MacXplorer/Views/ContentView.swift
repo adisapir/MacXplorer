@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var renameItem: FileItem?
     @State private var renameText = ""
     @State private var itemPendingTrash: FileItem?
+    @State private var serverAddress = "smb://"
 
     var body: some View {
         NavigationSplitView {
@@ -40,6 +41,13 @@ struct ContentView: View {
                 }
             } onCancel: {
                 renameItem = nil
+            }
+        }
+        .sheet(isPresented: $model.isConnectToServerPresented) {
+            ConnectToServerSheet(serverAddress: $serverAddress) {
+                model.connectToServer(serverAddress)
+            } onCancel: {
+                model.isConnectToServerPresented = false
             }
         }
         .onChange(of: model.renameRequest) { _, item in
@@ -123,6 +131,20 @@ private struct SidebarView: View {
                         .tag(location.url)
                 }
             }
+
+            Section(SidebarLocation.Group.network.rawValue) {
+                Button {
+                    model.showConnectToServer()
+                } label: {
+                    Label("Connect to Server", systemImage: "plus.circle")
+                }
+                .buttonStyle(.plain)
+
+                ForEach(model.sidebarLocations.filter { $0.group == .network }) { location in
+                    Label(location.name, systemImage: location.systemImage)
+                        .tag(location.url)
+                }
+            }
         }
         .listStyle(.sidebar)
         .symbolRenderingMode(.hierarchical)
@@ -198,6 +220,15 @@ private struct BrowserToolbar: View {
                         help: "Reveal the selected item in Finder"
                     ) {
                         model.revealSelectedInFinder()
+                    }
+                }
+
+                ToolbarButtonGroup {
+                    ToolbarIconButton(
+                        systemName: "network.badge.shield.half.filled",
+                        help: "Connect to a network server"
+                    ) {
+                        model.showConnectToServer()
                     }
                 }
 
@@ -778,6 +809,37 @@ private struct RenameSheet: View {
                 Button("Rename", action: onSave)
                     .buttonStyle(.borderedProminent)
                     .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+    }
+}
+
+private struct ConnectToServerSheet: View {
+    @Binding var serverAddress: String
+    let onConnect: () -> Void
+    let onCancel: () -> Void
+
+    private var trimmedAddress: String {
+        serverAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Connect to Server")
+                .font(.headline)
+
+            TextField("smb://server/share", text: $serverAddress)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 390)
+                .onSubmit(onConnect)
+
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                Button("Connect", action: onConnect)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(trimmedAddress.isEmpty || trimmedAddress == "smb://")
             }
         }
         .padding(20)

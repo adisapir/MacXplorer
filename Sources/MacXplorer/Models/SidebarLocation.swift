@@ -5,6 +5,7 @@ struct SidebarLocation: Identifiable, Hashable {
     enum Group: String {
         case favorites = "Favorites"
         case devices = "Devices"
+        case network = "Network"
     }
 
     var id: URL { url }

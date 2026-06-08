@@ -6,6 +6,10 @@ enum SystemActions {
         NSWorkspace.shared.open(url)
     }
 
+    static func connectToServer(_ url: URL) {
+        NSWorkspace.shared.open(url)
+    }
+
     static func revealInFinder(_ url: URL) {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
