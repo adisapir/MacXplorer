@@ -4,21 +4,37 @@ import SwiftUI
 @main
 struct MacXplorerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var model = FileBrowserViewModel(
-        fileSystem: LocalFileSystemService()
-    )
+    @StateObject private var tabs = BrowserTabsViewModel()
     @StateObject private var settings = AppSettings()
+
+    private var model: FileBrowserViewModel {
+        tabs.activeModel
+    }
 
     var body: some Scene {
         WindowGroup("MacXplorer") {
             ContentView()
-                .environmentObject(model)
+                .environmentObject(tabs)
                 .environmentObject(settings)
                 .preferredColorScheme(settings.appearance.colorScheme)
                 .frame(minWidth: 980, minHeight: 620)
+                .onAppear {
+                    tabs.updateMaximumConcurrentTabs(settings.maximumConcurrentTabs)
+                }
+                .onChange(of: settings.maximumConcurrentTabs) { _, maximumConcurrentTabs in
+                    tabs.updateMaximumConcurrentTabs(maximumConcurrentTabs)
+                }
         }
         .commands {
             CommandGroup(replacing: .newItem) {
+                Button("New Tab") {
+                    tabs.addTab()
+                }
+                .keyboardShortcut("t", modifiers: .command)
+                .disabled(!tabs.canAddTab)
+
+                Divider()
+
                 Button("Open") {
                     model.openSelected()
                 }
@@ -87,7 +103,10 @@ struct MacXplorerApp: App {
                 }
                 .keyboardShortcut("r", modifiers: .command)
 
-                Toggle("Show Hidden Files", isOn: $model.showHiddenFiles)
+                Toggle("Show Hidden Files", isOn: Binding(
+                    get: { model.showHiddenFiles },
+                    set: { model.showHiddenFiles = $0 }
+                ))
                     .keyboardShortcut(".", modifiers: [.command, .shift])
             }
 

@@ -2,7 +2,21 @@ import AppKit
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject private var model: FileBrowserViewModel
+    @EnvironmentObject private var tabs: BrowserTabsViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BrowserTabStrip()
+
+            ActiveBrowserView(model: tabs.activeModel)
+                .id(tabs.activeTab.id)
+                .environmentObject(tabs.activeModel)
+        }
+    }
+}
+
+private struct ActiveBrowserView: View {
+    @ObservedObject var model: FileBrowserViewModel
     @State private var renameItem: FileItem?
     @State private var renameText = ""
     @State private var itemPendingTrash: FileItem?
@@ -93,6 +107,97 @@ struct ContentView: View {
                 Text(itemPendingTrash.name)
             }
         }
+        .environmentObject(model)
+    }
+}
+
+private struct BrowserTabStrip: View {
+    @EnvironmentObject private var tabs: BrowserTabsViewModel
+
+    var body: some View {
+        GeometryReader { proxy in
+            let horizontalPadding: CGFloat = 16
+            let addButtonWidth: CGFloat = 36
+            let tabSpacing: CGFloat = 2
+            let availableWidth = max(
+                44,
+                proxy.size.width - horizontalPadding - addButtonWidth - tabSpacing * CGFloat(max(tabs.tabs.count - 1, 0))
+            )
+            let tabWidth = availableWidth / CGFloat(max(tabs.tabs.count, 1))
+
+            HStack(spacing: tabSpacing) {
+                ForEach(tabs.tabs) { tab in
+                    BrowserTabButton(
+                        model: tab.model,
+                        isSelected: tab.id == tabs.selectedTabID,
+                        width: tabWidth
+                    ) {
+                        tabs.selectTab(tab.id)
+                    }
+                }
+
+                Button {
+                    tabs.addTab()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 28, height: 26)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!tabs.canAddTab)
+                .foregroundStyle(tabs.canAddTab ? .primary : .tertiary)
+                .modernTooltip(tabs.canAddTab ? "Open a new tab" : "Maximum number of tabs reached")
+            }
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(.bar)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(.separator.opacity(0.75))
+                    .frame(height: 1)
+            }
+        }
+        .frame(height: 37)
+    }
+}
+
+private struct BrowserTabButton: View {
+    @ObservedObject var model: FileBrowserViewModel
+    let isSelected: Bool
+    let width: CGFloat
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                if width >= 54 {
+                    Image(systemName: model.isBrowsingNetwork ? "network" : "folder.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                }
+
+                Text(model.tabTitle)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, max(4, min(10, width / 12)))
+            .frame(width: width, height: 28, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isSelected ? .primary : .secondary)
+        .background(
+            isSelected ? Color(nsColor: .controlBackgroundColor) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 7)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(isSelected ? Color(nsColor: .separatorColor).opacity(0.7) : .clear, lineWidth: 1)
+        }
+        .modernTooltip(model.currentLocationText)
     }
 }
 

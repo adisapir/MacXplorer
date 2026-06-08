@@ -81,6 +81,21 @@ final class FileBrowserViewModel: ObservableObject {
 
         return currentURL.isFileURL ? currentURL.path : currentURL.absoluteString
     }
+    var tabTitle: String {
+        if currentURL == Self.networkRootURL {
+            return "Network"
+        }
+
+        if currentURL.isFileURL {
+            if currentURL.path == "/" {
+                return "/"
+            }
+
+            return currentURL.lastPathComponent.isEmpty ? currentURL.path : currentURL.lastPathComponent
+        }
+
+        return currentURL.host() ?? currentURL.absoluteString
+    }
 
     var sidebarLocations: [SidebarLocation] {
         let builtInFavorites = builtInFavoriteLocations()

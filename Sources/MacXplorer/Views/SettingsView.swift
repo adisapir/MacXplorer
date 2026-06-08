@@ -12,8 +12,27 @@ struct SettingsView: View {
                 }
             }
             .pickerStyle(.radioGroup)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Maximum number of concurrent tabs")
+                    Spacer()
+                    Text("\(settings.maximumConcurrentTabs)")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+
+                Slider(
+                    value: Binding(
+                        get: { Double(settings.maximumConcurrentTabs) },
+                        set: { settings.maximumConcurrentTabs = Int($0.rounded()) }
+                    ),
+                    in: Double(AppSettings.maximumConcurrentTabsRange.lowerBound)...Double(AppSettings.maximumConcurrentTabsRange.upperBound),
+                    step: 1
+                )
+            }
         }
         .padding(20)
-        .frame(width: 360)
+        .frame(width: 420)
     }
 }
