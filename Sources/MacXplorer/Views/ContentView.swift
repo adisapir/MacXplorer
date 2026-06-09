@@ -30,14 +30,18 @@ private struct ActiveBrowserView: View {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
-            VStack(spacing: 0) {
-                BrowserToolbar()
-                FileTableView(
-                    renameItem: $renameItem,
-                    renameText: $renameText,
-                    itemPendingTrash: $itemPendingTrash
-                )
-                StatusBar()
+            if model.isCopyQueueVisible {
+                CopyQueueView(queue: model.copyQueue)
+            } else {
+                VStack(spacing: 0) {
+                    BrowserToolbar()
+                    FileTableView(
+                        renameItem: $renameItem,
+                        renameText: $renameText,
+                        itemPendingTrash: $itemPendingTrash
+                    )
+                    StatusBar()
+                }
             }
         }
         .alert("MacXplorer", isPresented: Binding(
@@ -93,6 +97,34 @@ private struct ActiveBrowserView: View {
             manualFolderPath = model.currentURL.isFileURL ? model.currentURL.path : ""
             manualFolderError = nil
         }
+        .confirmationDialog(
+            "Items already exist at the destination",
+            isPresented: Binding(
+                get: { model.copyConflictRequest != nil },
+                set: { if !$0 { model.copyConflictRequest = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Overwrite") {
+                model.resolveCopyConflict(.overwrite, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+            }
+
+            Button("Skip") {
+                model.resolveCopyConflict(.skip, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+            }
+
+            Button("Cancel operation", role: .cancel) {
+                model.resolveCopyConflict(.cancel, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+            }
+        } message: {
+            Text(copyConflictMessage)
+        }
+        .onAppear {
+            model.copyQueue.maximumConcurrentCopies = settings.maximumConcurrentCopiedFiles
+        }
+        .onChange(of: settings.maximumConcurrentCopiedFiles) { _, maximumConcurrentCopiedFiles in
+            model.copyQueue.maximumConcurrentCopies = maximumConcurrentCopiedFiles
+        }
         .onChange(of: model.renameRequest) { _, item in
             guard let item else {
                 return
@@ -137,6 +169,19 @@ private struct ActiveBrowserView: View {
             }
         }
         .environmentObject(model)
+    }
+
+    private var copyConflictMessage: String {
+        guard let request = model.copyConflictRequest else {
+            return ""
+        }
+
+        let visibleNames = request.conflictingNames.prefix(3).joined(separator: ", ")
+        if request.conflictingNames.count > 3 {
+            return "\(visibleNames), and \(request.conflictingNames.count - 3) more already exist."
+        }
+
+        return "\(visibleNames) already exist."
     }
 }
 
@@ -232,12 +277,19 @@ private struct BrowserTabButton: View {
 
 private struct SidebarView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
+    private let copyQueueSelectionID = "macxplorer://copy-queue"
 
     var body: some View {
         List(selection: Binding(
-            get: { model.currentURL },
-            set: { url in
-                if let url {
+            get: { model.isCopyQueueVisible ? copyQueueSelectionID : model.currentURL.absoluteString },
+            set: { selection in
+                guard let selection else {
+                    return
+                }
+
+                if selection == copyQueueSelectionID {
+                    model.showCopyQueue()
+                } else if let url = URL(string: selection) {
                     model.navigate(to: url)
                 }
             }
@@ -245,7 +297,7 @@ private struct SidebarView: View {
             Section(SidebarLocation.Group.favorites.rawValue) {
                 ForEach(model.sidebarLocations.filter { $0.group == .favorites }) { location in
                     Label(location.name, systemImage: location.systemImage)
-                        .tag(location.url)
+                        .tag(location.url.absoluteString)
                         .contextMenu {
                             if location.canRemoveFromFavorites {
                                 Button("Remove from Favorites") {
@@ -262,7 +314,7 @@ private struct SidebarView: View {
             Section(SidebarLocation.Group.devices.rawValue) {
                 ForEach(model.sidebarLocations.filter { $0.group == .devices }) { location in
                     Label(location.name, systemImage: location.systemImage)
-                        .tag(location.url)
+                        .tag(location.url.absoluteString)
                 }
             }
 
@@ -276,8 +328,13 @@ private struct SidebarView: View {
 
                 ForEach(model.sidebarLocations.filter { $0.group == .network }) { location in
                     Label(location.name, systemImage: location.systemImage)
-                        .tag(location.url)
+                        .tag(location.url.absoluteString)
                 }
+            }
+
+            Section("Copy Queue") {
+                Label("Copy Queue", systemImage: "doc.on.clipboard")
+                    .tag(copyQueueSelectionID)
             }
         }
         .listStyle(.sidebar)
@@ -424,6 +481,134 @@ private struct BrowserToolbar: View {
             pathFocused = false
         }
     }
+}
+
+private struct CopyQueueView: View {
+    @ObservedObject var queue: CopyQueueViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Copy Queue")
+                    .font(.headline)
+
+                Spacer()
+
+                Text("\(queue.activeCopyCount) active")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            .padding(16)
+            .background(.bar)
+
+            if queue.items.isEmpty {
+                ContentUnavailableView(
+                    "No Copy Operations",
+                    systemImage: "doc.on.clipboard",
+                    description: Text("Copied files will appear here while they are being copied.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(queue.items) { item in
+                    CopyQueueRow(item: item) {
+                        queue.cancel(item.id)
+                    }
+                    .listRowInsets(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14))
+                }
+                .listStyle(.plain)
+            }
+        }
+    }
+}
+
+private struct CopyQueueRow: View {
+    let item: CopyQueueItem
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 8) {
+                    Text(item.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    Text(stateText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                ProgressView(value: item.progress)
+                    .progressViewStyle(.linear)
+
+                HStack(spacing: 12) {
+                    Text(speedText)
+                    Text(etaText)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            }
+
+            Spacer(minLength: 8)
+
+            Button(action: onCancel) {
+                Image(systemName: "xmark")
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!item.state.isActive)
+            .foregroundStyle(item.state.isActive ? .secondary : .tertiary)
+            .modernTooltip("Cancel this copy operation")
+        }
+    }
+
+    private var stateText: String {
+        switch item.state {
+        case .pending:
+            return "Pending"
+        case .running:
+            return "Copying"
+        case .completed:
+            return "Complete"
+        case .failed:
+            return "Failed"
+        case .cancelled:
+            return "Cancelled"
+        }
+    }
+
+    private var speedText: String {
+        guard item.state == .running, item.bytesPerSecond > 0 else {
+            return "Speed --"
+        }
+
+        return "\(Self.byteFormatter.string(fromByteCount: Int64(item.bytesPerSecond))) /s"
+    }
+
+    private var etaText: String {
+        guard let estimatedSecondsRemaining = item.estimatedSecondsRemaining else {
+            return "ETA --"
+        }
+
+        return "ETA \(Self.durationFormatter.string(from: estimatedSecondsRemaining) ?? "--")"
+    }
+
+    private static let byteFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter
+    }()
+
+    private static let durationFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute, .second]
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 2
+        return formatter
+    }()
 }
 
 private struct ToolbarButtonGroup<Content: View>: View {
@@ -697,6 +882,12 @@ private struct FileTableView: View {
                 Button("Cut") {
                     model.selectedItemIDs = selection
                     model.cutSelectedItems()
+                }
+                .disabled(!canCut(selection: selection))
+
+                Button("Copy") {
+                    model.selectedItemIDs = selection
+                    model.copySelectedItems()
                 }
                 .disabled(!canCut(selection: selection))
 

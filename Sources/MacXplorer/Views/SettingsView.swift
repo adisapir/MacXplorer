@@ -50,6 +50,25 @@ struct SettingsView: View {
                     step: 1
                 )
             }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Maximum number of concurrent copied files")
+                    Spacer()
+                    Text("\(settings.maximumConcurrentCopiedFiles)")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+
+                Slider(
+                    value: Binding(
+                        get: { Double(settings.maximumConcurrentCopiedFiles) },
+                        set: { settings.maximumConcurrentCopiedFiles = Int($0.rounded()) }
+                    ),
+                    in: Double(AppSettings.maximumConcurrentCopiedFilesRange.lowerBound)...Double(AppSettings.maximumConcurrentCopiedFilesRange.upperBound),
+                    step: 1
+                )
+            }
         }
         .padding(20)
         .frame(width: 420)

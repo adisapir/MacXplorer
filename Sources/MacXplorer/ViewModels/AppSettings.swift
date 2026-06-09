@@ -6,8 +6,10 @@ final class AppSettings: ObservableObject {
     private static let maximumConcurrentTabsKey = "MaximumConcurrentTabs"
     private static let manualFolderHistoryLimitKey = "ManualFolderHistoryLimit"
     private static let manualFolderHistoryKey = "ManualFolderHistory"
+    private static let maximumConcurrentCopiedFilesKey = "MaximumConcurrentCopiedFiles"
     static let maximumConcurrentTabsRange = 5...50
     static let manualFolderHistoryLimitRange = 0...20
+    static let maximumConcurrentCopiedFilesRange = 1...5
 
     @Published var appearance: AppAppearance {
         didSet {
@@ -40,6 +42,18 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var maximumConcurrentCopiedFiles: Int {
+        didSet {
+            let clampedValue = Self.clampedMaximumConcurrentCopiedFiles(maximumConcurrentCopiedFiles)
+            guard maximumConcurrentCopiedFiles == clampedValue else {
+                maximumConcurrentCopiedFiles = clampedValue
+                return
+            }
+
+            UserDefaults.standard.set(maximumConcurrentCopiedFiles, forKey: Self.maximumConcurrentCopiedFilesKey)
+        }
+    }
+
     @Published private(set) var manualFolderHistory: [String]
 
     init(defaults: UserDefaults = .standard) {
@@ -52,6 +66,9 @@ final class AppSettings: ObservableObject {
         let savedManualFolderHistoryLimit = defaults.object(forKey: Self.manualFolderHistoryLimitKey) as? Int
         self.manualFolderHistoryLimit = savedManualFolderHistoryLimit.map(Self.clampedManualFolderHistoryLimit) ?? 5
         self.manualFolderHistory = defaults.stringArray(forKey: Self.manualFolderHistoryKey) ?? []
+
+        let savedMaximumConcurrentCopiedFiles = defaults.object(forKey: Self.maximumConcurrentCopiedFilesKey) as? Int
+        self.maximumConcurrentCopiedFiles = savedMaximumConcurrentCopiedFiles.map(Self.clampedMaximumConcurrentCopiedFiles) ?? 3
         trimManualFolderHistory()
     }
 
@@ -79,6 +96,10 @@ final class AppSettings: ObservableObject {
 
     private static func clampedManualFolderHistoryLimit(_ value: Int) -> Int {
         min(max(value, manualFolderHistoryLimitRange.lowerBound), manualFolderHistoryLimitRange.upperBound)
+    }
+
+    private static func clampedMaximumConcurrentCopiedFiles(_ value: Int) -> Int {
+        min(max(value, maximumConcurrentCopiedFilesRange.lowerBound), maximumConcurrentCopiedFilesRange.upperBound)
     }
 
     private func trimManualFolderHistory() {

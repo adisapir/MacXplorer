@@ -77,6 +77,11 @@ struct MacXplorerApp: App {
             }
 
             CommandGroup(replacing: .pasteboard) {
+                Button("Copy") {
+                    model.copySelectedItem()
+                }
+                .keyboardShortcut("c", modifiers: .command)
+
                 Button("Cut") {
                     model.cutSelectedItem()
                 }
@@ -84,10 +89,11 @@ struct MacXplorerApp: App {
                 .disabled(!model.canCutSelectedItem)
 
                 Button("Paste") {
-                    Task { await model.pasteCutItems() }
+                    Task {
+                        await model.pasteItems(maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+                    }
                 }
                 .keyboardShortcut("v", modifiers: .command)
-                .disabled(!model.canPasteCutItems)
 
                 Divider()
 

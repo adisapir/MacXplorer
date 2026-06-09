@@ -51,6 +51,22 @@ enum SystemActions {
         NSPasteboard.general.setString(url.isFileURL ? url.path : url.absoluteString, forType: .string)
     }
 
+    static func copyFileURLs(_ urls: [URL]) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects(urls.map { $0 as NSURL })
+    }
+
+    static func fileURLsFromPasteboard() -> [URL] {
+        let objects = NSPasteboard.general.readObjects(forClasses: [NSURL.self])
+        return objects?.compactMap { object in
+            guard let url = object as? URL, url.isFileURL else {
+                return nil
+            }
+
+            return url.standardizedFileURL
+        } ?? []
+    }
+
     private static func directoryURL(for url: URL) -> URL {
         let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey])
         return resourceValues?.isDirectory == true ? url : url.deletingLastPathComponent()
