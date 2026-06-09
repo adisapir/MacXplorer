@@ -30,6 +30,10 @@ final class BrowserTabsViewModel: ObservableObject {
         tabs.count < maximumConcurrentTabs
     }
 
+    var canCycleTabs: Bool {
+        tabs.count > 1
+    }
+
     func addTab() {
         guard canAddTab else {
             return
@@ -50,6 +54,26 @@ final class BrowserTabsViewModel: ObservableObject {
         }
 
         selectedTabID = tabID
+    }
+
+    func selectNextTab() {
+        selectTab(offset: 1)
+    }
+
+    func selectPreviousTab() {
+        selectTab(offset: -1)
+    }
+
+    private func selectTab(offset: Int) {
+        guard
+            tabs.count > 1,
+            let selectedIndex = tabs.firstIndex(where: { $0.id == selectedTabID })
+        else {
+            return
+        }
+
+        let nextIndex = (selectedIndex + offset + tabs.count) % tabs.count
+        selectedTabID = tabs[nextIndex].id
     }
 
     private static func makeTab() -> BrowserTab {

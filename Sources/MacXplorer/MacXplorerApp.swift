@@ -110,6 +110,20 @@ struct MacXplorerApp: App {
                     .keyboardShortcut(".", modifiers: [.command, .shift])
             }
 
+            CommandMenu("Tabs") {
+                Button("Select Next Tab") {
+                    tabs.selectNextTab()
+                }
+                .keyboardShortcut(.tab, modifiers: .control)
+                .disabled(!tabs.canCycleTabs)
+
+                Button("Select Previous Tab") {
+                    tabs.selectPreviousTab()
+                }
+                .keyboardShortcut(.tab, modifiers: [.control, .shift])
+                .disabled(!tabs.canCycleTabs)
+            }
+
             CommandMenu("Go") {
                 Button("Back") {
                     model.goBack()
