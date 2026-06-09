@@ -20,7 +20,7 @@ private struct ActiveBrowserView: View {
     @ObservedObject var model: FileBrowserViewModel
     @State private var renameItem: FileItem?
     @State private var renameText = ""
-    @State private var itemPendingTrash: FileItem?
+    @State private var itemsPendingTrash: [FileItem] = []
     @State private var serverAddress = "smb://"
     @State private var manualFolderPath = ""
     @State private var manualFolderError: String?
@@ -38,7 +38,7 @@ private struct ActiveBrowserView: View {
                     FileTableView(
                         renameItem: $renameItem,
                         renameText: $renameText,
-                        itemPendingTrash: $itemPendingTrash
+                        itemsPendingTrash: $itemsPendingTrash
                     )
                     StatusBar()
                 }
@@ -134,38 +134,41 @@ private struct ActiveBrowserView: View {
             renameText = item.name
             model.clearRenameRequest()
         }
-        .onChange(of: model.trashRequest) { _, item in
-            guard let item else {
+        .onChange(of: model.trashRequest) { _, items in
+            guard !items.isEmpty else {
                 return
             }
 
-            itemPendingTrash = item
+            itemsPendingTrash = items
             model.clearTrashRequest()
         }
         .confirmationDialog(
-            "Move item to Trash?",
+            itemsPendingTrash.count == 1 ? "Move item to Trash?" : "Move items to Trash?",
             isPresented: Binding(
-                get: { itemPendingTrash != nil },
-                set: { if !$0 { itemPendingTrash = nil } }
+                get: { !itemsPendingTrash.isEmpty },
+                set: { if !$0 { itemsPendingTrash = [] } }
             )
         ) {
             Button("Move to Trash", role: .destructive) {
-                guard let pendingItem = itemPendingTrash else {
+                guard !itemsPendingTrash.isEmpty else {
                     return
                 }
 
+                let pendingItems = itemsPendingTrash
                 Task {
-                    await model.moveItemToTrash(pendingItem)
-                    itemPendingTrash = nil
+                    await model.moveItemsToTrash(pendingItems)
+                    itemsPendingTrash = []
                 }
             }
 
             Button("Cancel", role: .cancel) {
-                itemPendingTrash = nil
+                itemsPendingTrash = []
             }
         } message: {
-            if let itemPendingTrash {
+            if itemsPendingTrash.count == 1, let itemPendingTrash = itemsPendingTrash.first {
                 Text(itemPendingTrash.name)
+            } else {
+                Text("\(itemsPendingTrash.count) selected items")
             }
         }
         .environmentObject(model)
@@ -853,7 +856,7 @@ private struct FileTableView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
     @Binding var renameItem: FileItem?
     @Binding var renameText: String
-    @Binding var itemPendingTrash: FileItem?
+    @Binding var itemsPendingTrash: [FileItem]
 
     var body: some View {
         ZStack {
@@ -928,7 +931,7 @@ private struct FileTableView: View {
                 Button("Move to Trash", role: .destructive) {
                     startTrash(selection: selection)
                 }
-                .disabled(!canEdit(selection: selection))
+                .disabled(!canTrash(selection: selection))
 
                 Divider()
 
@@ -984,12 +987,13 @@ private struct FileTableView: View {
     }
 
     private func startTrash(selection: Set<FileItem.ID>) {
-        guard let id = selection.first, let item = model.items.first(where: { $0.id == id }) else {
+        let items = model.items.filter { selection.contains($0.id) && !$0.isNetworkLocation }
+        guard !items.isEmpty else {
             return
         }
 
-        model.selectedItemIDs = [id]
-        itemPendingTrash = item
+        model.selectedItemIDs = Set(items.map(\.id))
+        itemsPendingTrash = items
     }
 
     private func pinFolder(selection: Set<FileItem.ID>) {
@@ -1021,6 +1025,12 @@ private struct FileTableView: View {
         }
 
         return !item.isNetworkLocation
+    }
+
+    private func canTrash(selection: Set<FileItem.ID>) -> Bool {
+        selection.contains { id in
+            model.items.first { $0.id == id }?.isNetworkLocation == false
+        }
     }
 
     private var emptyDescription: String {

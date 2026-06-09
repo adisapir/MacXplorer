@@ -59,7 +59,7 @@ struct MacXplorerApp: App {
                     model.requestTrashSelected()
                 }
                 .keyboardShortcut(.delete, modifiers: .command)
-                .disabled(model.selectedItem?.isNetworkLocation ?? true)
+                .disabled(!model.canTrashSelectedItems)
 
                 Divider()
 

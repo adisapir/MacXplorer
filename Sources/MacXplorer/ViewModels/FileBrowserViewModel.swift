@@ -36,7 +36,7 @@ final class FileBrowserViewModel: ObservableObject {
     @Published var selectedItemIDs: Set<FileItem.ID> = []
     @Published var sortOrder = [KeyPathComparator(\FileItem.name)]
     @Published var renameRequest: FileItem?
-    @Published var trashRequest: FileItem?
+    @Published var trashRequest: [FileItem] = []
     @Published var showHiddenFiles = false {
         didSet {
             reload()
@@ -99,6 +99,7 @@ final class FileBrowserViewModel: ObservableObject {
     var canCopySelectedItem: Bool { selectedItems.contains { !$0.isNetworkLocation } }
     var canPasteItems: Bool { currentURL.isFileURL && (!cutItemURLs.isEmpty || !copiedItemURLs.isEmpty || !SystemActions.fileURLsFromPasteboard().isEmpty) }
     var canPasteCutItems: Bool { currentURL.isFileURL && !cutItemURLs.isEmpty }
+    var canTrashSelectedItems: Bool { selectedItems.contains { !$0.isNetworkLocation } }
     var isBrowsingNetwork: Bool { currentURL == Self.networkRootURL }
     var currentLocationText: String {
         if currentURL == Self.networkRootURL {
@@ -344,11 +345,12 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     func requestTrashSelected() {
-        guard let selectedItem else {
+        let trashableItems = selectedItems.filter { !$0.isNetworkLocation }
+        guard !trashableItems.isEmpty else {
             return
         }
 
-        trashRequest = selectedItem
+        trashRequest = trashableItems
     }
 
     func pinSelectedFolderToFavorites() {
@@ -447,17 +449,30 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     func moveSelectedToTrash() async {
-        guard let selectedItem else {
+        let itemsToTrash = selectedItems.filter { !$0.isNetworkLocation }
+        guard !itemsToTrash.isEmpty else {
             return
         }
 
-        await moveItemToTrash(selectedItem)
+        await moveItemsToTrash(itemsToTrash)
     }
 
     func moveItemToTrash(_ item: FileItem) async {
+        await moveItemsToTrash([item])
+    }
+
+    func moveItemsToTrash(_ items: [FileItem]) async {
+        let trashableItems = items.filter { !$0.isNetworkLocation }
+        guard !trashableItems.isEmpty else {
+            return
+        }
+
         do {
-            try await fileSystem.moveToTrash(item.url)
-            clearCutItems(containing: [item.url])
+            for item in trashableItems {
+                try await fileSystem.moveToTrash(item.url)
+            }
+
+            clearCutItems(containing: trashableItems.map(\.url))
             reload()
         } catch {
             errorMessage = error.localizedDescription
@@ -623,7 +638,7 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     func clearTrashRequest() {
-        trashRequest = nil
+        trashRequest = []
     }
 
     private func connectToServer(_ url: URL) {
