@@ -333,8 +333,16 @@ private struct SidebarView: View {
             }
 
             Section("Copy Queue") {
-                Label("Copy Queue", systemImage: "doc.on.clipboard")
-                    .tag(copyQueueSelectionID)
+                HStack(spacing: 8) {
+                    Label("Copy Queue", systemImage: "doc.on.clipboard")
+
+                    Spacer(minLength: 8)
+
+                    if model.copyQueue.activeCopyCount > 0 {
+                        PulsingStatusDot()
+                    }
+                }
+                .tag(copyQueueSelectionID)
             }
         }
         .listStyle(.sidebar)
@@ -348,6 +356,27 @@ private struct SidebarView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
         }
+    }
+}
+
+private struct PulsingStatusDot: View {
+    @State private var isPulsing = false
+
+    var body: some View {
+        Circle()
+            .fill(Color.blue)
+            .frame(width: 8, height: 8)
+            .shadow(color: .blue.opacity(0.65), radius: isPulsing ? 5 : 1)
+            .opacity(isPulsing ? 0.35 : 1)
+            .scaleEffect(isPulsing ? 1.35 : 0.85)
+            .animation(
+                .easeInOut(duration: 0.75).repeatForever(autoreverses: true),
+                value: isPulsing
+            )
+            .onAppear {
+                isPulsing = true
+            }
+            .accessibilityLabel("Copy in progress")
     }
 }
 

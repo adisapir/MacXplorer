@@ -206,9 +206,9 @@ final class CopyQueueViewModel: ObservableObject {
             return
         }
 
-        items[index].copiedBytes = max(items[index].copiedBytes, items[index].totalBytes)
-        items[index].state = .completed
-        onItemCompleted?(items[index].destinationURL)
+        let destinationURL = items[index].destinationURL
+        items.remove(at: index)
+        onItemCompleted?(destinationURL)
         startAvailableCopies()
     }
 

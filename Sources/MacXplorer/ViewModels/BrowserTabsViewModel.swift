@@ -54,6 +54,7 @@ final class BrowserTabsViewModel: ObservableObject {
         }
 
         selectedTabID = tabID
+        activeModel.showCurrentFolder()
     }
 
     func selectNextTab() {

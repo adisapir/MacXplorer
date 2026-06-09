@@ -553,9 +553,6 @@ final class FileBrowserViewModel: ObservableObject {
         let enqueueResolution: CopyConflictResolution = conflictResolution == .cancel ? .skip : conflictResolution
         copyQueue.maximumConcurrentCopies = maximumConcurrentCopies
         copyQueue.enqueue(sources, to: destinationDirectory, conflictResolution: enqueueResolution)
-        if copyQueue.hasItems {
-            isCopyQueueVisible = true
-        }
     }
 
     func resolveCopyConflict(_ resolution: CopyConflictResolution, maximumConcurrentCopies: Int) {
@@ -570,13 +567,14 @@ final class FileBrowserViewModel: ObservableObject {
 
         copyQueue.maximumConcurrentCopies = maximumConcurrentCopies
         copyQueue.enqueue(request.sources, to: request.destinationDirectory, conflictResolution: resolution)
-        if copyQueue.hasItems {
-            isCopyQueueVisible = true
-        }
     }
 
     func showCopyQueue() {
         isCopyQueueVisible = true
+    }
+
+    func showCurrentFolder() {
+        isCopyQueueVisible = false
     }
 
     func isCut(_ item: FileItem) -> Bool {
