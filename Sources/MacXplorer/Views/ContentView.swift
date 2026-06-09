@@ -614,11 +614,11 @@ private struct FileTableView: View {
 
     var body: some View {
         ZStack {
-            Table(model.filteredItems, selection: Binding(
+            Table(model.displayedItems, selection: Binding(
                 get: { model.selectedItemIDs },
                 set: { model.selectedItemIDs = $0 }
-            )) {
-                TableColumn("Name") { item in
+            ), sortOrder: $model.sortOrder) {
+                TableColumn("Name", value: \.name) { item in
                     HStack(spacing: 8) {
                         FileItemIcon(item: item)
 
@@ -634,7 +634,7 @@ private struct FileTableView: View {
                 }
                 .width(min: 260, ideal: 360)
 
-                TableColumn("Kind") { item in
+                TableColumn("Kind", value: \.displayKind) { item in
                     Text(item.displayKind)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -642,7 +642,7 @@ private struct FileTableView: View {
                 }
                 .width(min: 120, ideal: 180)
 
-                TableColumn("Size") { item in
+                TableColumn("Size", value: \.sortSize) { item in
                     Text(item.displaySize)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
@@ -651,7 +651,7 @@ private struct FileTableView: View {
                 }
                 .width(min: 80, ideal: 110)
 
-                TableColumn("Modified") { item in
+                TableColumn("Modified", value: \.sortModifiedAt) { item in
                     Text(item.modifiedAt.map(Self.dateFormatter.string(from:)) ?? "")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -714,7 +714,7 @@ private struct FileTableView: View {
                     .controlSize(.large)
                     .padding(22)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-            } else if model.filteredItems.isEmpty {
+            } else if model.displayedItems.isEmpty {
                 ContentUnavailableView(
                     model.filterText.isEmpty ? "No Items" : "No Matching Items",
                     systemImage: model.filterText.isEmpty ? (model.isBrowsingNetwork ? "network.slash" : "folder") : "magnifyingglass",
@@ -813,7 +813,7 @@ private struct StatusBar: View {
                     .controlSize(.small)
                 Text("Loading")
             } else {
-                Text("\(model.filteredItems.count) of \(model.items.count) items")
+                Text("\(model.displayedItems.count) of \(model.items.count) items")
             }
 
             Spacer()

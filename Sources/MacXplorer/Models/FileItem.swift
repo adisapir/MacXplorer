@@ -100,4 +100,16 @@ extension FileItem {
 
         return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
     }
+
+    var sortSize: Int64 {
+        guard !opensInApp, let size else {
+            return -1
+        }
+
+        return size
+    }
+
+    var sortModifiedAt: Date {
+        modifiedAt ?? .distantPast
+    }
 }

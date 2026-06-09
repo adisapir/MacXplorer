@@ -23,6 +23,7 @@ final class FileBrowserViewModel: ObservableObject {
     @Published var pathText: String
     @Published var filterText = ""
     @Published var selectedItemIDs: Set<FileItem.ID> = []
+    @Published var sortOrder = [KeyPathComparator(\FileItem.name)]
     @Published var renameRequest: FileItem?
     @Published var trashRequest: FileItem?
     @Published var showHiddenFiles = false {
@@ -48,7 +49,11 @@ final class FileBrowserViewModel: ObservableObject {
         reload()
     }
 
-    var filteredItems: [FileItem] {
+    var displayedItems: [FileItem] {
+        filteredItems.sorted(using: sortOrder)
+    }
+
+    private var filteredItems: [FileItem] {
         let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
             return items
@@ -625,8 +630,8 @@ final class FileBrowserViewModel: ObservableObject {
     private func selectRange(through item: FileItem) {
         guard
             let anchorID = selectionAnchorID ?? selectedItemIDs.first,
-            let anchorIndex = filteredItems.firstIndex(where: { $0.id == anchorID }),
-            let targetIndex = filteredItems.firstIndex(where: { $0.id == item.id })
+            let anchorIndex = displayedItems.firstIndex(where: { $0.id == anchorID }),
+            let targetIndex = displayedItems.firstIndex(where: { $0.id == item.id })
         else {
             selectedItemIDs = [item.id]
             selectionAnchorID = item.id
@@ -634,7 +639,7 @@ final class FileBrowserViewModel: ObservableObject {
         }
 
         let bounds = min(anchorIndex, targetIndex)...max(anchorIndex, targetIndex)
-        selectedItemIDs = Set(bounds.map { filteredItems[$0].id })
+        selectedItemIDs = Set(bounds.map { displayedItems[$0].id })
     }
 
     private static func loadPinnedFavorites() -> [URL] {
