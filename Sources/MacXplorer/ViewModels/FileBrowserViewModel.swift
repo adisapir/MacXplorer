@@ -20,6 +20,7 @@ final class FileBrowserViewModel: ObservableObject {
     @Published private(set) var removedBuiltInFavoriteURLs: [URL] = []
     @Published private(set) var cutItemURLs: [URL] = []
     @Published var isConnectToServerPresented = false
+    @Published var isGoToFolderPresented = false
     @Published var pathText: String
     @Published var filterText = ""
     @Published var selectedItemIDs: Set<FileItem.ID> = []
@@ -267,6 +268,20 @@ final class FileBrowserViewModel: ObservableObject {
         }
 
         navigate(to: url)
+    }
+
+    func showGoToFolder() {
+        isGoToFolderPresented = true
+    }
+
+    func navigateToManualFolder(_ input: String) -> URL? {
+        guard let url = manualFolderURL(from: input), isDirectory(url) else {
+            errorMessage = "Path not found"
+            return nil
+        }
+
+        navigate(to: url.standardizedFileURL)
+        return url.standardizedFileURL
     }
 
     func showConnectToServer() {
@@ -606,6 +621,21 @@ final class FileBrowserViewModel: ObservableObject {
     private func isDirectory(_ url: URL) -> Bool {
         var isDirectory: ObjCBool = false
         return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
+    private func manualFolderURL(from input: String) -> URL? {
+        let trimmedInput = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedInput.isEmpty else {
+            return nil
+        }
+
+        let expandedPath = NSString(string: trimmedInput).expandingTildeInPath
+        if NSString(string: expandedPath).isAbsolutePath {
+            return URL(fileURLWithPath: expandedPath)
+        }
+
+        let baseURL = currentURL.isFileURL ? currentURL : FileManager.default.homeDirectoryForCurrentUser
+        return baseURL.appendingPathComponent(expandedPath)
     }
 
     private func isBuiltInFavorite(_ url: URL) -> Bool {

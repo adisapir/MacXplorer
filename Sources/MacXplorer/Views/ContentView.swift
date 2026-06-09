@@ -16,11 +16,14 @@ struct ContentView: View {
 }
 
 private struct ActiveBrowserView: View {
+    @EnvironmentObject private var settings: AppSettings
     @ObservedObject var model: FileBrowserViewModel
     @State private var renameItem: FileItem?
     @State private var renameText = ""
     @State private var itemPendingTrash: FileItem?
     @State private var serverAddress = "smb://"
+    @State private var manualFolderPath = ""
+    @State private var manualFolderError: String?
 
     var body: some View {
         NavigationSplitView {
@@ -63,6 +66,32 @@ private struct ActiveBrowserView: View {
             } onCancel: {
                 model.isConnectToServerPresented = false
             }
+        }
+        .sheet(isPresented: $model.isGoToFolderPresented) {
+            GoToFolderSheet(
+                folderPath: $manualFolderPath,
+                history: settings.manualFolderHistory,
+                errorMessage: manualFolderError
+            ) {
+                guard let folderURL = model.navigateToManualFolder(manualFolderPath) else {
+                    manualFolderError = model.errorMessage ?? "Path not found"
+                    model.clearError()
+                    return
+                }
+
+                settings.addManualFolderToHistory(folderURL)
+                model.isGoToFolderPresented = false
+            } onCancel: {
+                model.isGoToFolderPresented = false
+            }
+        }
+        .onChange(of: model.isGoToFolderPresented) { _, isPresented in
+            guard isPresented else {
+                return
+            }
+
+            manualFolderPath = model.currentURL.isFileURL ? model.currentURL.path : ""
+            manualFolderError = nil
         }
         .onChange(of: model.renameRequest) { _, item in
             guard let item else {
@@ -981,6 +1010,111 @@ private struct ConnectToServerSheet: View {
             }
         }
         .padding(20)
+    }
+}
+
+private struct GoToFolderSheet: View {
+    @Binding var folderPath: String
+    let history: [String]
+    let errorMessage: String?
+    let onGo: () -> Void
+    let onCancel: () -> Void
+
+    private var trimmedPath: String {
+        folderPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Go to Folder")
+                .font(.headline)
+
+            ManualFolderComboBox(text: $folderPath, history: history, onCommit: onGo)
+                .frame(width: 420, height: 26)
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                Button("Go", action: onGo)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(trimmedPath.isEmpty)
+            }
+        }
+        .padding(20)
+    }
+}
+
+private struct ManualFolderComboBox: NSViewRepresentable {
+    @Binding var text: String
+    let history: [String]
+    let onCommit: () -> Void
+
+    func makeNSView(context: Context) -> NSComboBox {
+        let comboBox = NSComboBox()
+        comboBox.usesDataSource = false
+        comboBox.completes = false
+        comboBox.numberOfVisibleItems = 8
+        comboBox.delegate = context.coordinator
+        return comboBox
+    }
+
+    func updateNSView(_ nsView: NSComboBox, context: Context) {
+        context.coordinator.text = $text
+        context.coordinator.onCommit = onCommit
+
+        if nsView.objectValue as? String != text {
+            nsView.objectValue = text
+        }
+
+        nsView.removeAllItems()
+        nsView.addItems(withObjectValues: history)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, onCommit: onCommit)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSComboBoxDelegate {
+        var text: Binding<String>
+        var onCommit: () -> Void
+
+        init(text: Binding<String>, onCommit: @escaping () -> Void) {
+            self.text = text
+            self.onCommit = onCommit
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let comboBox = notification.object as? NSComboBox else {
+                return
+            }
+
+            text.wrappedValue = comboBox.stringValue
+        }
+
+        func comboBoxSelectionDidChange(_ notification: Notification) {
+            guard let comboBox = notification.object as? NSComboBox else {
+                return
+            }
+
+            text.wrappedValue = comboBox.stringValue
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
+                return false
+            }
+
+            text.wrappedValue = control.stringValue
+            onCommit()
+            return true
+        }
     }
 }
 

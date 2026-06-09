@@ -31,6 +31,25 @@ struct SettingsView: View {
                     step: 1
                 )
             }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Number of manual folder to keep in history")
+                    Spacer()
+                    Text("\(settings.manualFolderHistoryLimit)")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+
+                Slider(
+                    value: Binding(
+                        get: { Double(settings.manualFolderHistoryLimit) },
+                        set: { settings.manualFolderHistoryLimit = Int($0.rounded()) }
+                    ),
+                    in: Double(AppSettings.manualFolderHistoryLimitRange.lowerBound)...Double(AppSettings.manualFolderHistoryLimitRange.upperBound),
+                    step: 1
+                )
+            }
         }
         .padding(20)
         .frame(width: 420)

@@ -143,6 +143,11 @@ struct MacXplorerApp: App {
                 .keyboardShortcut(.upArrow, modifiers: .command)
                 .disabled(!model.canGoUp)
 
+                Button("Go to Folder...") {
+                    model.showGoToFolder()
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+
                 Divider()
 
                 Button("Home") {
