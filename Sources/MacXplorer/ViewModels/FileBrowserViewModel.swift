@@ -15,6 +15,7 @@ struct CopyConflictRequest: Identifiable, Equatable {
 
 @MainActor
 final class FileBrowserViewModel: ObservableObject {
+    private static let maximumQuickViewBytes = 10 * 1024 * 1024
     private static let pinnedFavoritesKey = "PinnedFavoritePaths"
     private static let removedBuiltInFavoritesKey = "RemovedBuiltInFavoritePaths"
     private static let networkRootURL = URL(string: "macxplorer://network")!
@@ -37,6 +38,7 @@ final class FileBrowserViewModel: ObservableObject {
     @Published var sortOrder = [KeyPathComparator(\FileItem.name)]
     @Published var renameRequest: FileItem?
     @Published var trashRequest: [FileItem] = []
+    @Published var quickViewContent: QuickViewContent?
     @Published var showHiddenFiles = false {
         didSet {
             reload()
@@ -100,6 +102,13 @@ final class FileBrowserViewModel: ObservableObject {
     var canPasteItems: Bool { currentURL.isFileURL && (!cutItemURLs.isEmpty || !copiedItemURLs.isEmpty || !SystemActions.fileURLsFromPasteboard().isEmpty) }
     var canPasteCutItems: Bool { currentURL.isFileURL && !cutItemURLs.isEmpty }
     var canTrashSelectedItems: Bool { selectedItems.contains { !$0.isNetworkLocation } }
+    var canQuickViewSelectedItem: Bool {
+        guard selectedItems.count == 1, let selectedItem else {
+            return false
+        }
+
+        return canQuickView(selectedItem)
+    }
     var isBrowsingNetwork: Bool { currentURL == Self.networkRootURL }
     var currentLocationText: String {
         if currentURL == Self.networkRootURL {
@@ -334,6 +343,51 @@ final class FileBrowserViewModel: ObservableObject {
         } else {
             SystemActions.open(selectedItem.url)
         }
+    }
+
+    func quickViewSelectedItem() {
+        guard let selectedItem, canQuickView(selectedItem) else {
+            return
+        }
+
+        Task {
+            do {
+                quickViewContent = try await fileSystem.quickViewContent(
+                    for: selectedItem.url,
+                    maximumBytes: Self.maximumQuickViewBytes
+                )
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func clearQuickView() {
+        quickViewContent = nil
+    }
+
+    func canQuickView(_ item: FileItem) -> Bool {
+        !item.isNetworkLocation && !item.isDirectory && !item.isPackage
+    }
+
+    func openWithApplications(for item: FileItem) -> [OpenWithApplication] {
+        guard canOpenWith(item) else {
+            return []
+        }
+
+        return SystemActions.applicationsForOpening(item.url)
+    }
+
+    func openSelected(with application: OpenWithApplication) {
+        guard let selectedItem, canOpenWith(selectedItem) else {
+            return
+        }
+
+        SystemActions.open(selectedItem.url, with: application)
+    }
+
+    func canOpenWith(_ item: FileItem) -> Bool {
+        !item.isNetworkLocation
     }
 
     func requestRenameSelected() {

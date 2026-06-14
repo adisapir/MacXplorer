@@ -6,6 +6,43 @@ enum SystemActions {
         NSWorkspace.shared.open(url)
     }
 
+    static func applicationsForOpening(_ url: URL) -> [OpenWithApplication] {
+        let applicationURLs = NSWorkspace.shared.urlsForApplications(toOpen: url)
+        var seenURLs = Set<URL>()
+
+        return applicationURLs.compactMap { applicationURL in
+            let standardizedURL = applicationURL.standardizedFileURL
+            guard !seenURLs.contains(standardizedURL) else {
+                return nil
+            }
+
+            seenURLs.insert(standardizedURL)
+            let bundle = Bundle(url: standardizedURL)
+            let displayName = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            let bundleName = bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+            let name = displayName ?? bundleName ?? standardizedURL.deletingPathExtension().lastPathComponent
+
+            return OpenWithApplication(
+                url: standardizedURL,
+                name: name,
+                bundleIdentifier: bundle?.bundleIdentifier
+            )
+        }
+        .sorted { lhs, rhs in
+            lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    static func open(_ url: URL, with application: OpenWithApplication) {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.open([url], withApplicationAt: application.url, configuration: configuration) { _, error in
+            if error != nil {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
     static func connectToServer(_ url: URL) {
         NSWorkspace.shared.open(url)
     }

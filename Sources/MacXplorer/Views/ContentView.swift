@@ -89,6 +89,11 @@ private struct ActiveBrowserView: View {
                 model.isGoToFolderPresented = false
             }
         }
+        .sheet(item: $model.quickViewContent) { content in
+            QuickViewSheet(content: content) {
+                model.clearQuickView()
+            }
+        }
         .onChange(of: model.isGoToFolderPresented) { _, isPresented in
             guard isPresented else {
                 return
@@ -188,6 +193,51 @@ private struct ActiveBrowserView: View {
     }
 }
 
+private struct QuickViewSheet: View {
+    let content: QuickViewContent
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(.system(size: 22, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Color.accentColor)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(content.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    Text(content.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 16)
+
+                Button("Done", action: onClose)
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(16)
+            .background(.bar)
+
+            ScrollView {
+                Text(content.text)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(16)
+            }
+            .background(Color(nsColor: .textBackgroundColor))
+        }
+        .frame(minWidth: 680, minHeight: 460)
+    }
+}
+
 private struct BrowserTabStrip: View {
     @EnvironmentObject private var tabs: BrowserTabsViewModel
 
@@ -224,7 +274,7 @@ private struct BrowserTabStrip: View {
                 .buttonStyle(.plain)
                 .disabled(!tabs.canAddTab)
                 .foregroundStyle(tabs.canAddTab ? .primary : .tertiary)
-                .modernTooltip(tabs.canAddTab ? "Open a new tab" : "Maximum number of tabs reached")
+                .modernTooltip(tabs.canAddTab ? "Open a new tab (⌘T)" : "Maximum number of tabs reached")
             }
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -393,7 +443,7 @@ private struct BrowserToolbar: View {
                 ToolbarButtonGroup {
                     ToolbarIconButton(
                         systemName: "chevron.backward",
-                        help: "Go back to the previous folder",
+                        help: "Go back to the previous folder (⌘[)",
                         isDisabled: !model.canGoBack
                     ) {
                         model.goBack()
@@ -401,7 +451,7 @@ private struct BrowserToolbar: View {
 
                     ToolbarIconButton(
                         systemName: "chevron.forward",
-                        help: "Go forward to the next folder",
+                        help: "Go forward to the next folder (⌘])",
                         isDisabled: !model.canGoForward
                     ) {
                         model.goForward()
@@ -409,7 +459,7 @@ private struct BrowserToolbar: View {
 
                     ToolbarIconButton(
                         systemName: "arrow.up.to.line.compact",
-                        help: "Go to the enclosing folder",
+                        help: "Go to the enclosing folder (⌘↑)",
                         isDisabled: !model.canGoUp
                     ) {
                         model.goUp()
@@ -417,7 +467,7 @@ private struct BrowserToolbar: View {
 
                     ToolbarIconButton(
                         systemName: "arrow.clockwise",
-                        help: "Reload the current folder"
+                        help: "Reload the current folder (⌘R)"
                     ) {
                         model.reload()
                     }
@@ -426,7 +476,7 @@ private struct BrowserToolbar: View {
                 ToolbarButtonGroup {
                     ToolbarIconButton(
                         systemName: "folder.badge.plus",
-                        help: "Create a new folder in the current folder",
+                        help: "Create a new folder in the current folder (⌘⇧N)",
                         isDisabled: !model.canCreateFolder
                     ) {
                         Task { await model.createFolder() }
@@ -434,14 +484,14 @@ private struct BrowserToolbar: View {
 
                     ToolbarIconButton(
                         systemName: "terminal",
-                        help: "Open Terminal at the current folder"
+                        help: "Open Terminal at the current folder (⌘⇧T)"
                     ) {
                         model.openCurrentFolderInTerminal()
                     }
 
                     ToolbarIconButton(
                         systemName: "arrow.up.forward.square",
-                        help: "Reveal the selected item in Finder"
+                        help: "Reveal the selected item in Finder (⌘⇧R)"
                     ) {
                         model.revealSelectedInFinder()
                     }
@@ -450,7 +500,7 @@ private struct BrowserToolbar: View {
                 ToolbarButtonGroup {
                     ToolbarIconButton(
                         systemName: "network.badge.shield.half.filled",
-                        help: "Connect to a network server"
+                        help: "Connect to a network server (⌘K)"
                     ) {
                         model.showConnectToServer()
                     }
@@ -495,7 +545,7 @@ private struct BrowserToolbar: View {
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
-                .modernTooltip("Copy the selected item path, or the current folder path if nothing is selected")
+                .modernTooltip("Copy the selected item path, or the current folder path if nothing is selected (⌘⌥C)")
             }
             .symbolRenderingMode(.hierarchical)
             .padding(.horizontal, 10)
@@ -911,6 +961,29 @@ private struct FileTableView: View {
                     model.openSelected()
                 }
 
+                Button("Quick View") {
+                    model.selectedItemIDs = selection
+                    model.quickViewSelectedItem()
+                }
+                .disabled(!canQuickView(selection: selection))
+
+                Menu("Open With") {
+                    let applications = openWithApplications(selection: selection)
+                    if applications.isEmpty {
+                        Text("No Applications Found")
+                    } else {
+                        ForEach(applications) { application in
+                            Button(application.name) {
+                                model.selectedItemIDs = selection
+                                model.openSelected(with: application)
+                            }
+                        }
+                    }
+                }
+                .disabled(!canOpenWith(selection: selection))
+
+                Divider()
+
                 Button("Cut") {
                     model.selectedItemIDs = selection
                     model.cutSelectedItems()
@@ -1005,12 +1078,44 @@ private struct FileTableView: View {
         model.pinSelectedFolderToFavorites()
     }
 
+    private func selectedItem(for selection: Set<FileItem.ID>) -> FileItem? {
+        guard selection.count == 1, let id = selection.first else {
+            return nil
+        }
+
+        return model.items.first { $0.id == id }
+    }
+
     private func canPin(selection: Set<FileItem.ID>) -> Bool {
-        guard let id = selection.first, let item = model.items.first(where: { $0.id == id }) else {
+        guard let item = selectedItem(for: selection) else {
             return false
         }
 
         return model.canPinFolder(item)
+    }
+
+    private func canQuickView(selection: Set<FileItem.ID>) -> Bool {
+        guard let item = selectedItem(for: selection) else {
+            return false
+        }
+
+        return model.canQuickView(item)
+    }
+
+    private func canOpenWith(selection: Set<FileItem.ID>) -> Bool {
+        guard let item = selectedItem(for: selection) else {
+            return false
+        }
+
+        return model.canOpenWith(item)
+    }
+
+    private func openWithApplications(selection: Set<FileItem.ID>) -> [OpenWithApplication] {
+        guard let item = selectedItem(for: selection) else {
+            return []
+        }
+
+        return model.openWithApplications(for: item)
     }
 
     private func canCut(selection: Set<FileItem.ID>) -> Bool {

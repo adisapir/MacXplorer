@@ -1,8 +1,8 @@
 # MacXplorer Requirements Specification
 
-Version: 0.1
-Date: 2026-06-02
-Status: Planning draft
+Version: 0.2
+Date: 2026-06-14
+Status: Implementation-aligned draft
 
 ## 1. Product Summary
 
@@ -321,7 +321,69 @@ P3:
 - MacXplorer will keep search direct/Spotlight-based for MVP. Later on this might change to a build a local filename index.
 - "Open in Finder" should exist as an escape hatch for every location
 
-## 15. Research Notes
+## 15. Current Implementation Snapshot
+
+As of 2026-06-14, the app implements the following behavior.
+
+Navigation and shell:
+
+- Native SwiftUI macOS app distributed as a Swift Package executable.
+- Sidebar with Favorites, Devices, Network, removable built-in favorites, custom pinned folders, and drag-to-pin support.
+- Network entry points for mounted remote volumes, discovered network locations, and Connect to Server.
+- Tab strip with configurable maximum tab count and keyboard tab cycling.
+- Back, Forward, Up, Reload, Home, Downloads, Go to Folder, and editable path entry.
+- Current path status and copy-path support.
+
+File list:
+
+- Main table view with Name, Kind, Size, and Modified columns.
+- Sortable columns using SwiftUI table sort descriptors.
+- Current-folder text filter that operates on loaded items without Spotlight.
+- Multi-selection through table selection, row click targets, and range/toggle selection behavior.
+- Modern file, folder, package, alias-folder, volume, and network icons.
+- Cut items are visually dimmed until moved or cleared.
+
+File actions:
+
+- Open selected folders inside MacXplorer, including alias folders resolved to their target.
+- Open selected non-folder items with the system default application.
+- Context menu actions for Open, Quick View, Open With, Cut, Copy, Rename, Move to Trash, Add to Favorites, Copy Path, Open in Terminal, and Reveal in Finder.
+- Quick View displays local file text in an app popup, strips non-displayable binary bytes when needed, and does not load buffers larger than 10 MB.
+- Open With lists applications returned by macOS for the selected item and opens the item with the chosen application.
+- New Folder, Rename, Move to Trash, copy, cut, and paste.
+- Copy queue with progress, speed, ETA, cancellation, copy conflict detection, overwrite/skip/cancel choices, and configurable concurrency.
+- Cut and paste moves files using Command+X and Command+V.
+- Move to Trash supports multiple selected local items and uses the system Trash.
+
+Toolbar and commands:
+
+- Toolbar groups for navigation, create folder, Terminal, reveal in Finder, connect to server, filter, path entry, and copy path.
+- Custom topmost tooltip window with 0.5 second hover delay and light/dark color adaptation.
+- Main menu commands for file actions, pasteboard actions, view toggles, tab selection, navigation, and tools.
+- Keyboard shortcuts documented in the README.
+
+Settings and persistence:
+
+- Settings window available from the standard app Settings menu.
+- Appearance setting supports Match System Settings, Light, and Dark.
+- Configurable maximum concurrent tabs.
+- Configurable Go to Folder history limit and persisted Go to Folder history.
+- Configurable maximum concurrent copied files.
+- Favorites, removed built-in favorites, and settings persist through UserDefaults.
+
+Platform behavior:
+
+- Minimum macOS target is macOS 15.
+- macOS 26 glass styling is applied behind availability checks.
+- Terminal opens at the selected folder/file parent or current folder and activates Terminal when possible.
+- Finder is used as an escape hatch through Reveal in Finder.
+
+Known implementation gaps:
+
+- Finder's exact Open With grouping, ordering, icons, and recommended/default-app labeling are not fully reproduced in SwiftUI menus; the app uses macOS application resolution instead.
+- Split pane, recursive search, advanced file operation undo, duplicate, compress/extract, permanent delete, pause/resume/retry, and full Quick Look integration remain future work.
+
+## 16. Research Notes
 
 Sources reviewed during this draft:
 

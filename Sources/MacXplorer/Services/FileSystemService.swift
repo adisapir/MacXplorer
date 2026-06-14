@@ -6,6 +6,7 @@ protocol FileSystemService: Sendable {
     func renameItem(at url: URL, to newName: String) async throws -> URL
     func moveItems(_ urls: [URL], to directory: URL) async throws -> [URL]
     func moveToTrash(_ url: URL) async throws
+    func quickViewContent(for url: URL, maximumBytes: Int) async throws -> QuickViewContent
 }
 
 struct LocalFileSystemService: FileSystemService {
@@ -126,6 +127,37 @@ struct LocalFileSystemService: FileSystemService {
         }.value
     }
 
+    func quickViewContent(for url: URL, maximumBytes: Int) async throws -> QuickViewContent {
+        try await Task.detached(priority: .userInitiated) {
+            let values = try url.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey, .isPackageKey])
+            let typeDescription = (try? url.resourceValues(forKeys: [.localizedTypeDescriptionKey]).localizedTypeDescription) ?? "File"
+            guard values.isDirectory != true, values.isPackage != true else {
+                throw FileSystemError.previewUnavailable("Quick View is available for files, not folders or packages.")
+            }
+
+            let fileSize = values.fileSize ?? 0
+            guard fileSize <= maximumBytes else {
+                let limit = ByteCountFormatter.string(fromByteCount: Int64(maximumBytes), countStyle: .file)
+                let size = ByteCountFormatter.string(fromByteCount: Int64(fileSize), countStyle: .file)
+                return QuickViewContent(
+                    url: url,
+                    title: url.lastPathComponent,
+                    detail: "\(typeDescription) • \(size)",
+                    text: "Preview skipped because this file is larger than \(limit)."
+                )
+            }
+
+            let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+            let text = Self.displayableText(from: data)
+            return QuickViewContent(
+                url: url,
+                title: url.lastPathComponent,
+                detail: "\(typeDescription) • \(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))",
+                text: text.isEmpty ? "No displayable characters found." : text
+            )
+        }.value
+    }
+
     private static func aliasTargetURL(for url: URL) -> URL? {
         try? URL(resolvingAliasFileAt: url, options: [.withoutUI]).standardizedFileURL
     }
@@ -133,11 +165,37 @@ struct LocalFileSystemService: FileSystemService {
     private static func fileTypeValues(for url: URL) -> URLResourceValues? {
         try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
     }
+
+    private static func displayableText(from data: Data) -> String {
+        if let text = String(data: data, encoding: .utf8), !containsControlCharacters(in: text) {
+            return text
+        }
+
+        let scalars = data.compactMap { byte -> UnicodeScalar? in
+            switch byte {
+            case 9, 10, 13:
+                return UnicodeScalar(byte)
+            case 32...126:
+                return UnicodeScalar(byte)
+            default:
+                return nil
+            }
+        }
+
+        return String(String.UnicodeScalarView(scalars))
+    }
+
+    private static func containsControlCharacters(in text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            scalar.value < 32 && scalar != "\n" && scalar != "\r" && scalar != "\t"
+        }
+    }
 }
 
 enum FileSystemError: LocalizedError {
     case invalidName
     case itemAlreadyExists(String)
+    case previewUnavailable(String)
 
     var errorDescription: String? {
         switch self {
@@ -145,6 +203,8 @@ enum FileSystemError: LocalizedError {
             return "Enter a valid name."
         case .itemAlreadyExists(let name):
             return "An item named \"\(name)\" already exists."
+        case .previewUnavailable(let message):
+            return message
         }
     }
 }
