@@ -68,7 +68,14 @@ final class FileBrowserViewModel: ObservableObject {
 
             self.reload(selecting: destinationURL)
         }
-        reload()
+
+        // Defer the initial load to the next main-actor tick. Calling reload()
+        // directly here would publish @Published changes (isLoading/errorMessage)
+        // while SwiftUI is still instantiating this @StateObject during a view
+        // update, which triggers "Publishing changes from within view updates".
+        Task { @MainActor [weak self] in
+            self?.reload()
+        }
     }
 
     var displayedItems: [FileItem] {
