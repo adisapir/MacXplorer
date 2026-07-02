@@ -64,6 +64,7 @@ final class FileBrowserViewModel: ObservableObject {
     private var loadGeneration = 0
     private var selectionAnchorID: FileItem.ID?
     private var destinationBeforeAuxiliaryDetail: DetailDestination = .files
+    private var listingOptions = DirectoryListingOptions()
 
     init(fileSystem: FileSystemService) {
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
@@ -218,10 +219,22 @@ final class FileBrowserViewModel: ObservableObject {
         Task { await self.reload(selecting: nil) }
     }
 
+    /// Updates which extra (slow) per-file metadata is fetched, reloading only
+    /// if it actually changed.
+    func setListingOptions(_ options: DirectoryListingOptions) {
+        guard options != listingOptions else {
+            return
+        }
+
+        listingOptions = options
+        reload()
+    }
+
     private func reload(selecting itemID: FileItem.ID?) async {
         let target = currentURL
         let showHiddenFiles = showHiddenFiles
         let fileSystem = fileSystem
+        let listingOptions = listingOptions
         loadGeneration += 1
         let generation = loadGeneration
         isLoading = true
@@ -232,7 +245,7 @@ final class FileBrowserViewModel: ObservableObject {
                 if target == Self.networkRootURL {
                     loadedItems = await networkItems()
                 } else {
-                    loadedItems = try await fileSystem.listDirectory(at: target, showHiddenFiles: showHiddenFiles)
+                    loadedItems = try await fileSystem.listDirectory(at: target, showHiddenFiles: showHiddenFiles, options: listingOptions)
                 }
 
                 guard generation == loadGeneration else {

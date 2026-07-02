@@ -1,8 +1,21 @@
 import Foundation
 import ImageIO
 
+/// Controls whether the (potentially slow) per-file metadata is fetched during
+/// a listing. Owner resolution and image capture-date reads are only worth
+/// paying for when their columns are visible, so they default to off.
+struct DirectoryListingOptions: Equatable, Sendable {
+    var includeOwner: Bool
+    var includeDateTaken: Bool
+
+    init(includeOwner: Bool = false, includeDateTaken: Bool = false) {
+        self.includeOwner = includeOwner
+        self.includeDateTaken = includeDateTaken
+    }
+}
+
 protocol FileSystemService: Sendable {
-    func listDirectory(at url: URL, showHiddenFiles: Bool) async throws -> [FileItem]
+    func listDirectory(at url: URL, showHiddenFiles: Bool, options: DirectoryListingOptions) async throws -> [FileItem]
     func createFolder(named name: String, in directory: URL) async throws -> URL
     func renameItem(at url: URL, to newName: String) async throws -> URL
     func moveItems(_ urls: [URL], to directory: URL) async throws -> [URL]
@@ -22,13 +35,13 @@ struct LocalFileSystemService: FileSystemService {
         .localizedTypeDescriptionKey
     ]
 
-    func listDirectory(at url: URL, showHiddenFiles: Bool) async throws -> [FileItem] {
+    func listDirectory(at url: URL, showHiddenFiles: Bool, options: DirectoryListingOptions) async throws -> [FileItem] {
         try await Task.detached(priority: .userInitiated) {
-            let options: FileManager.DirectoryEnumerationOptions = showHiddenFiles ? [] : [.skipsHiddenFiles]
+            let enumerationOptions: FileManager.DirectoryEnumerationOptions = showHiddenFiles ? [] : [.skipsHiddenFiles]
             let urls = try FileManager.default.contentsOfDirectory(
                 at: url,
                 includingPropertiesForKeys: keys,
-                options: options
+                options: enumerationOptions
             )
 
             // Build items off the main actor with bounded concurrency. FileItem
@@ -45,7 +58,7 @@ struct LocalFileSystemService: FileSystemService {
                 let primeCount = min(maxConcurrency, urls.count)
                 while nextIndex < primeCount {
                     let itemURL = urls[nextIndex]
-                    group.addTask { try Self.makeFileItem(for: itemURL, resourceKeys: resourceKeys) }
+                    group.addTask { try Self.makeFileItem(for: itemURL, resourceKeys: resourceKeys, options: options) }
                     nextIndex += 1
                 }
 
@@ -53,7 +66,7 @@ struct LocalFileSystemService: FileSystemService {
                     items.append(item)
                     if nextIndex < urls.count {
                         let itemURL = urls[nextIndex]
-                        group.addTask { try Self.makeFileItem(for: itemURL, resourceKeys: resourceKeys) }
+                        group.addTask { try Self.makeFileItem(for: itemURL, resourceKeys: resourceKeys, options: options) }
                         nextIndex += 1
                     }
                 }
@@ -166,7 +179,7 @@ struct LocalFileSystemService: FileSystemService {
     }
 
     /// Fully off-main builder for a single directory entry.
-    nonisolated private static func makeFileItem(for itemURL: URL, resourceKeys: [URLResourceKey]) throws -> FileItem {
+    nonisolated private static func makeFileItem(for itemURL: URL, resourceKeys: [URLResourceKey], options: DirectoryListingOptions) throws -> FileItem {
         let values = try itemURL.resourceValues(forKeys: Set(resourceKeys))
         let isDirectory = values.isDirectory ?? false
 
@@ -176,7 +189,12 @@ struct LocalFileSystemService: FileSystemService {
         }
 
         let aliasTargetValues = aliasTargetURL.flatMap(Self.fileTypeValues)
-        let owner = (try? FileManager.default.attributesOfItem(atPath: itemURL.path))?[.ownerAccountName] as? String
+        // Owner resolution (uid → name via Directory Services) is slow, so only
+        // pay for it when the Owner column is shown.
+        let owner = options.includeOwner
+            ? (try? FileManager.default.attributesOfItem(atPath: itemURL.path))?[.ownerAccountName] as? String
+            : nil
+        let dateTaken = options.includeDateTaken ? Self.captureDate(for: itemURL) : nil
 
         return FileItem(
             url: itemURL,
@@ -192,7 +210,7 @@ struct LocalFileSystemService: FileSystemService {
             size: values.fileSize.map(Int64.init),
             modifiedAt: values.contentModificationDate,
             createdAt: values.creationDate,
-            dateTaken: Self.captureDate(for: itemURL),
+            dateTaken: dateTaken,
             owner: owner
         )
     }

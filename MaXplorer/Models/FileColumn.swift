@@ -33,3 +33,13 @@ enum FileColumn: String, CaseIterable, Identifiable, Codable {
 
     static let defaultVisible: Set<FileColumn> = [.name, .kind, .size, .dateModified]
 }
+
+extension DirectoryListingOptions {
+    /// Only fetch the slow per-file metadata when its column is visible.
+    init(columns: Set<FileColumn>) {
+        self.init(
+            includeOwner: columns.contains(.owner),
+            includeDateTaken: columns.contains(.dateTaken)
+        )
+    }
+}

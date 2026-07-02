@@ -23,6 +23,7 @@ final class BrowserTabsViewModel: ObservableObject {
     // stay stuck at their launch-time value and their keyboard shortcuts never
     // fire once enabled.
     private var activeModelObservation: AnyCancellable?
+    private var listingOptions = DirectoryListingOptions()
 
     init(maximumConcurrentTabs: Int = 20) {
         let initialTab = Self.makeTab()
@@ -60,8 +61,18 @@ final class BrowserTabsViewModel: ObservableObject {
         }
 
         let tab = Self.makeTab()
+        tab.model.setListingOptions(listingOptions)
         tabs.append(tab)
         selectedTabID = tab.id
+    }
+
+    /// Propagates the file-listing options (which slow columns to fetch) to
+    /// every tab so switching tabs stays consistent.
+    func applyListingOptions(_ options: DirectoryListingOptions) {
+        listingOptions = options
+        for tab in tabs {
+            tab.model.setListingOptions(options)
+        }
     }
 
     func updateMaximumConcurrentTabs(_ maximumConcurrentTabs: Int) {

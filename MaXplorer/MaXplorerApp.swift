@@ -20,9 +20,13 @@ struct MaXplorerApp: App {
                 .frame(minWidth: 980, minHeight: 620)
                 .onAppear {
                     tabs.updateMaximumConcurrentTabs(settings.maximumConcurrentTabs)
+                    tabs.applyListingOptions(DirectoryListingOptions(columns: settings.visibleColumns))
                 }
                 .onChange(of: settings.maximumConcurrentTabs) { _, maximumConcurrentTabs in
                     tabs.updateMaximumConcurrentTabs(maximumConcurrentTabs)
+                }
+                .onChange(of: settings.visibleColumns) { _, visibleColumns in
+                    tabs.applyListingOptions(DirectoryListingOptions(columns: visibleColumns))
                 }
         }
         .commands {
