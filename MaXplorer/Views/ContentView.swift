@@ -254,16 +254,20 @@ private struct QuickViewSheet: View {
 private struct BrowserTabStrip: View {
     @EnvironmentObject private var tabs: BrowserTabsViewModel
 
+    // Chrome-like sizing: tabs share the available width but never grow past a
+    // comfortable maximum, and shrink to fit as more tabs open.
+    private let maxTabWidth: CGFloat = 190
+    private let tabSpacing: CGFloat = 5
+
     var body: some View {
         GeometryReader { proxy in
             let horizontalPadding: CGFloat = 16
-            let addButtonWidth: CGFloat = 36
-            let tabSpacing: CGFloat = 2
+            let addButtonWidth: CGFloat = 30
             let availableWidth = max(
                 44,
                 proxy.size.width - horizontalPadding - addButtonWidth - tabSpacing * CGFloat(max(tabs.tabs.count - 1, 0))
             )
-            let tabWidth = availableWidth / CGFloat(max(tabs.tabs.count, 1))
+            let tabWidth = min(maxTabWidth, availableWidth / CGFloat(max(tabs.tabs.count, 1)))
 
             HStack(spacing: tabSpacing) {
                 ForEach(tabs.tabs) { tab in
@@ -276,18 +280,11 @@ private struct BrowserTabStrip: View {
                     }
                 }
 
-                Button {
+                AddTabButton(isEnabled: tabs.canAddTab) {
                     tabs.addTab()
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 28, height: 26)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .disabled(!tabs.canAddTab)
-                .foregroundStyle(tabs.canAddTab ? .primary : .tertiary)
-                .modernTooltip(tabs.canAddTab ? "Open a new tab (⌘T)" : "Maximum number of tabs reached")
+
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -298,7 +295,32 @@ private struct BrowserTabStrip: View {
                     .frame(height: 1)
             }
         }
-        .frame(height: 37)
+        .frame(height: 34)
+    }
+}
+
+private struct AddTabButton: View {
+    let isEnabled: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 26, height: 24)
+                .background(
+                    (isHovering && isEnabled) ? Color.primary.opacity(0.08) : .clear,
+                    in: RoundedRectangle(cornerRadius: 7)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .foregroundStyle(isEnabled ? .primary : .tertiary)
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .onHover { isHovering = $0 }
+        .modernTooltip(isEnabled ? "Open a new tab (⌘T)" : "Maximum number of tabs reached")
     }
 }
 
@@ -307,13 +329,16 @@ private struct BrowserTabButton: View {
     let isSelected: Bool
     let width: CGFloat
     let action: () -> Void
+    @State private var isHovering = false
+
+    private let cornerRadius: CGFloat = 10
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 7) {
-                if width >= 54 {
+            HStack(spacing: 6) {
+                if width >= 62 {
                     Image(systemName: model.isBrowsingNetwork ? "network" : "folder.fill")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .symbolRenderingMode(.hierarchical)
                 }
 
@@ -323,21 +348,34 @@ private struct BrowserTabButton: View {
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, max(4, min(10, width / 12)))
-            .frame(width: width, height: 28, alignment: .leading)
-            .contentShape(RoundedRectangle(cornerRadius: 7))
+            .padding(.horizontal, max(7, min(11, width / 12)))
+            .frame(width: width, height: 26, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
         }
         .buttonStyle(.plain)
         .foregroundStyle(isSelected ? .primary : .secondary)
-        .background(
-            isSelected ? Color(nsColor: .controlBackgroundColor) : Color.clear,
-            in: RoundedRectangle(cornerRadius: 7)
-        )
+        .background(tabBackground, in: RoundedRectangle(cornerRadius: cornerRadius))
         .overlay {
-            RoundedRectangle(cornerRadius: 7)
+            RoundedRectangle(cornerRadius: cornerRadius)
                 .stroke(isSelected ? Color(nsColor: .separatorColor).opacity(0.7) : .clear, lineWidth: 1)
         }
+        .shadow(color: isSelected ? .black.opacity(0.12) : .clear, radius: 3, y: 1)
+        .animation(.easeOut(duration: 0.13), value: isHovering)
+        .animation(.easeOut(duration: 0.13), value: isSelected)
+        .onHover { isHovering = $0 }
         .modernTooltip(model.currentLocationText)
+    }
+
+    private var tabBackground: AnyShapeStyle {
+        if isSelected {
+            return AnyShapeStyle(Color(nsColor: .controlBackgroundColor))
+        }
+
+        if isHovering {
+            return AnyShapeStyle(Color.primary.opacity(0.09))
+        }
+
+        return AnyShapeStyle(Color.clear)
     }
 }
 
@@ -428,11 +466,17 @@ private struct SidebarView: View {
             }
 
             Section {
+                Divider()
+                    .listRowSeparator(.hidden)
+                    .padding(.vertical, 2)
+
                 Label("Settings", systemImage: "gearshape")
                     .tag(settingsSelectionID)
+                    .foregroundStyle(.blue)
 
                 Label("About", systemImage: "info.circle")
                     .tag(aboutSelectionID)
+                    .foregroundStyle(.blue)
             }
         }
         .listStyle(.sidebar)
