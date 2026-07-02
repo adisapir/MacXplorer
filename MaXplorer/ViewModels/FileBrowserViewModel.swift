@@ -42,7 +42,7 @@ final class FileBrowserViewModel: ObservableObject {
     @Published var quickViewContent: QuickViewContent?
     @Published var showHiddenFiles = false {
         didSet {
-            reload()
+            Task { await reload() }
         }
     }
     @Published var showAliases = true
@@ -67,7 +67,7 @@ final class FileBrowserViewModel: ObservableObject {
                 return
             }
 
-            self.reload(selecting: destinationURL)
+            Task { await self.reload(selecting: destinationURL) }
         }
 
         // Defer the initial load to the next main-actor tick. Calling reload()
@@ -205,19 +205,17 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     func reload() {
-        reload(selecting: nil)
+        Task { await self.reload(selecting: nil) }
     }
 
-    private func reload(selecting itemID: FileItem.ID?) {
+    private func reload(selecting itemID: FileItem.ID?) async {
         let target = currentURL
         let showHiddenFiles = showHiddenFiles
         let fileSystem = fileSystem
         loadGeneration += 1
         let generation = loadGeneration
-
         isLoading = true
         errorMessage = nil
-
         Task {
             do {
                 let loadedItems: [FileItem]
@@ -250,7 +248,7 @@ final class FileBrowserViewModel: ObservableObject {
     func navigate(to url: URL, recordHistory: Bool = true) {
         isCopyQueueVisible = false
         guard url != currentURL else {
-            reload()
+            Task { await reload() }
             return
         }
 
@@ -262,7 +260,7 @@ final class FileBrowserViewModel: ObservableObject {
         currentURL = url
         pathText = url == Self.networkRootURL ? "Network" : url.path
         filterText = ""
-        reload()
+        Task { await reload() }
     }
 
     func goBack() {
@@ -497,7 +495,7 @@ final class FileBrowserViewModel: ObservableObject {
     func createFolder() async {
         do {
             let createdURL = try await fileSystem.createFolder(named: "New Folder", in: currentURL)
-            reload(selecting: createdURL)
+            await reload(selecting: createdURL)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -510,7 +508,7 @@ final class FileBrowserViewModel: ObservableObject {
 
         do {
             let renamedURL = try await fileSystem.renameItem(at: selectedItem.url, to: newName)
-            reload(selecting: renamedURL)
+            await reload(selecting: renamedURL)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -541,7 +539,7 @@ final class FileBrowserViewModel: ObservableObject {
             }
 
             clearCutItems(containing: trashableItems.map(\.url))
-            reload()
+            Task { await reload() }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -593,7 +591,7 @@ final class FileBrowserViewModel: ObservableObject {
         do {
             let movedURLs = try await fileSystem.moveItems(cutItemURLs, to: currentURL)
             clearCutItems(containing: cutItemURLs)
-            reload(selecting: movedURLs.first)
+            await reload(selecting: movedURLs.first)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -928,3 +926,4 @@ final class FileBrowserViewModel: ObservableObject {
         return url
     }
 }
+
