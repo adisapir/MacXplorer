@@ -28,25 +28,17 @@ enum AppInfo {
 /// canvas (not a separate window). Includes a button that opens the bundled
 /// changelog in a popup sheet.
 struct AboutView: View {
+    @EnvironmentObject private var model: FileBrowserViewModel
     @State private var isChangelogPresented = false
-
-    private let highlights: [Highlight] = [
-        Highlight(icon: "rectangle.split.3x1", title: "Tabbed Browsing", detail: "Explore multiple folders at once."),
-        Highlight(icon: "bolt.horizontal.circle", title: "Fast Copy Queue", detail: "Live progress with conflict handling."),
-        Highlight(icon: "network", title: "Network Aware", detail: "Browse and connect to servers."),
-        Highlight(icon: "sparkles", title: "Liquid Glass", detail: "Tuned for the latest macOS.")
-    ]
 
     var body: some View {
         ScrollView {
             VStack(spacing: 28) {
                 header
 
-                highlightsGrid
-
                 actions
 
-                Text("© 2026 MaXplorer. Crafted for macOS.")
+                Text("MaXplorer - Crafted by Adi Sapir (github.com/adisapir)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(.top, 4)
@@ -67,11 +59,7 @@ struct AboutView: View {
 
     private var header: some View {
         VStack(spacing: 18) {
-            Image(nsImage: AppInfo.iconImage)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 132, height: 132)
-                .shadow(color: .black.opacity(0.22), radius: 18, y: 10)
+            ShiningAppIcon(size: 132)
 
             VStack(spacing: 8) {
                 Text(AppInfo.name)
@@ -96,44 +84,32 @@ struct AboutView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28))
     }
 
-    private var highlightsGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
-            ForEach(highlights) { highlight in
-                HStack(spacing: 14) {
-                    Image(systemName: highlight.icon)
-                        .font(.system(size: 22, weight: .semibold))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 34)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(highlight.title)
-                            .font(.headline)
-                        Text(highlight.detail)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
-            }
-        }
-    }
-
     private var actions: some View {
-        Button {
-            isChangelogPresented = true
-        } label: {
-            Label("View Changelog", systemImage: "clock.arrow.circlepath")
-                .font(.headline)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+        HStack(spacing: 14) {
+            Button {
+                isChangelogPresented = true
+            } label: {
+                Label("View Changelog", systemImage: "clock.arrow.circlepath")
+                    .font(.headline)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.glass)
+            .controlSize(.large)
+
+            Button {
+                model.dismissAuxiliaryDetail()
+            } label: {
+                Text("OK")
+                    .font(.headline)
+                    .frame(minWidth: 64)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.glassProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.cancelAction)
         }
-        .buttonStyle(.glassProminent)
-        .controlSize(.large)
     }
 
     private var backdrop: some View {
@@ -144,12 +120,52 @@ struct AboutView: View {
         )
         .ignoresSafeArea()
     }
+}
 
-    private struct Highlight: Identifiable {
-        let id = UUID()
-        let icon: String
-        let title: String
-        let detail: String
+/// The About header app icon with a periodic diagonal shine sweep, masked to
+/// the icon artwork so the highlight only travels across the icon itself.
+private struct ShiningAppIcon: View {
+    let size: CGFloat
+    @State private var sweep = false
+
+    var body: some View {
+        Image(nsImage: AppInfo.iconImage)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: size, height: size)
+            .overlay { shine }
+            .shadow(color: .black.opacity(0.22), radius: 18, y: 10)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: false).delay(0.6)) {
+                    sweep = true
+                }
+            }
+    }
+
+    private var shine: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+
+            LinearGradient(
+                stops: [
+                    .init(color: .white.opacity(0), location: 0),
+                    .init(color: .white.opacity(0.75), location: 0.5),
+                    .init(color: .white.opacity(0), location: 1)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: width * 0.45, height: proxy.size.height * 1.6)
+            .rotationEffect(.degrees(22))
+            .offset(x: sweep ? width * 1.25 : -width * 1.25)
+            .blendMode(.screen)
+        }
+        .mask(
+            Image(nsImage: AppInfo.iconImage)
+                .resizable()
+                .interpolation(.high)
+        )
+        .allowsHitTesting(false)
     }
 }
 

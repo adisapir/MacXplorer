@@ -42,6 +42,7 @@ Current implementation status:
 | `⌃⇥` | Select next tab |
 | `⌃⇧⇥` | Select previous tab |
 | `⌘[` | Back |
+| `⌫` | Back (when the file list is focused) |
 | `⌘]` | Forward |
 | `⌘↑` | Enclosing folder |
 | `⌘⇧G` | Go to Folder |

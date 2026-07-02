@@ -63,6 +63,7 @@ final class FileBrowserViewModel: ObservableObject {
     private var forwardStack: [URL] = []
     private var loadGeneration = 0
     private var selectionAnchorID: FileItem.ID?
+    private var destinationBeforeAuxiliaryDetail: DetailDestination = .files
 
     init(fileSystem: FileSystemService) {
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
@@ -668,11 +669,25 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     func showAbout() {
-        detailDestination = .about
+        presentAuxiliaryDetail(.about)
     }
 
     func showSettings() {
-        detailDestination = .settings
+        presentAuxiliaryDetail(.settings)
+    }
+
+    /// Returns from a transient About/Settings surface to whatever the user was
+    /// viewing before (their folder/tab or the copy queue).
+    func dismissAuxiliaryDetail() {
+        detailDestination = destinationBeforeAuxiliaryDetail
+    }
+
+    private func presentAuxiliaryDetail(_ destination: DetailDestination) {
+        if detailDestination != .about, detailDestination != .settings {
+            destinationBeforeAuxiliaryDetail = detailDestination
+        }
+
+        detailDestination = destination
     }
 
     func isCut(_ item: FileItem) -> Bool {

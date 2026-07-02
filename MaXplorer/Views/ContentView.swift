@@ -47,6 +47,14 @@ private struct ActiveBrowserView: View {
                     )
                     StatusBar()
                 }
+                .onKeyPress(.delete) {
+                    guard model.canGoBack else {
+                        return .ignored
+                    }
+
+                    model.goBack()
+                    return .handled
+                }
             }
         }
         .alert("MaXplorer", isPresented: Binding(
@@ -722,6 +730,8 @@ private struct CopyQueueRow: View {
 }
 
 private struct SettingsSurface: View {
+    @EnvironmentObject private var model: FileBrowserViewModel
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -744,6 +754,19 @@ private struct SettingsSurface: View {
                     .scrollContentBackground(.hidden)
                     .padding(8)
                     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22))
+
+                Button {
+                    model.dismissAuxiliaryDetail()
+                } label: {
+                    Text("OK")
+                        .font(.headline)
+                        .frame(minWidth: 72)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.glassProminent)
+                .controlSize(.large)
+                .keyboardShortcut(.cancelAction)
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 32)
