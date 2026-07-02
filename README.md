@@ -23,16 +23,19 @@ Current implementation status:
 | --- | --- |
 | `⌘T` | New Tab |
 | `⌘O` | Open selected item |
+| `Space` | Quick View selected item |
 | `⌘⇧N` | New Folder |
-| `Space` | Rename selected item |
+| `⌘⇧R` | Rename selected item |
 | `⌘⌫` | Move selected items to Trash |
-| `⌘⇧R` | Reveal selected item in Finder |
+| `⌃⌘R` | Reveal selected item in Finder |
 | `⌘C` | Copy selected items |
 | `⌘X` | Cut selected items for move on paste |
 | `⌘V` | Paste copied or cut items |
+| `⌘A` | Select all items in the current folder |
 | `⌘⌥C` | Copy selected path, or current folder path if nothing is selected |
 | `⌘R` | Reload current folder |
 | `⌘⇧.` | Toggle hidden files |
+| `⌘⇧A` | Toggle aliases |
 | `⌃⇥` | Select next tab |
 | `⌃⇧⇥` | Select previous tab |
 | `⌘[` | Back |
