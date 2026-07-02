@@ -114,6 +114,12 @@ struct MaXplorerApp: App {
                     set: { model.showHiddenFiles = $0 }
                 ))
                     .keyboardShortcut(".", modifiers: [.command, .shift])
+
+                Toggle("Show Aliases", isOn: Binding(
+                    get: { model.showAliases },
+                    set: { model.showAliases = $0 }
+                ))
+                    .keyboardShortcut("a", modifiers: [.command, .shift])
             }
 
             CommandMenu("Tabs") {

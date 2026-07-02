@@ -400,15 +400,6 @@ private struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .symbolRenderingMode(.hierarchical)
-        .safeAreaInset(edge: .bottom) {
-            Toggle(isOn: $model.showHiddenFiles) {
-                Label("Hidden", systemImage: "eye.fill")
-            }
-            .toggleStyle(.button)
-            .symbolRenderingMode(.hierarchical)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-        }
     }
 }
 
@@ -504,6 +495,21 @@ private struct BrowserToolbar: View {
                     ) {
                         model.showConnectToServer()
                     }
+                }
+
+                ToolbarButtonGroup {
+                    ToolbarToggleButton(
+                        systemName: "eye.fill",
+                        help: model.showHiddenFiles ? "Hide hidden files (⌘⇧.)" : "Show hidden files (⌘⇧.)",
+                        isOn: $model.showHiddenFiles
+                    )
+
+                    ToolbarToggleButton(
+                        systemName: "a.square.fill",
+                        help: model.showAliases ? "Hide aliases (⌘⇧A)" : "Show aliases (⌘⇧A)",
+                        isOn: $model.showAliases,
+                        iconSize: 22
+                    )
                 }
 
                 Spacer(minLength: 12)
@@ -725,6 +731,31 @@ private struct ToolbarIconButton: View {
         .buttonStyle(.plain)
         .foregroundStyle(isDisabled ? .tertiary : .primary)
         .disabled(isDisabled)
+        .modernTooltip(help)
+    }
+}
+
+private struct ToolbarToggleButton: View {
+    let systemName: String
+    let help: String
+    @Binding var isOn: Bool
+    var iconSize: CGFloat = 14
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            Image(systemName: systemName)
+                .font(.system(size: iconSize, weight: .semibold))
+                .frame(width: 26, height: 24)
+                .contentShape(Rectangle())
+                .background {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isOn ? Color.accentColor.opacity(0.22) : .clear)
+                }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isOn ? Color.accentColor : .primary)
         .modernTooltip(help)
     }
 }

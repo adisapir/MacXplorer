@@ -45,6 +45,7 @@ final class FileBrowserViewModel: ObservableObject {
             reload()
         }
     }
+    @Published var showAliases = true
 
     let fileSystem: any FileSystemService
     let copyQueue = CopyQueueViewModel()
@@ -84,12 +85,17 @@ final class FileBrowserViewModel: ObservableObject {
 
     private var filteredItems: [FileItem] {
         let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else {
-            return items
-        }
 
         return items.filter { item in
-            item.name.localizedCaseInsensitiveContains(query)
+            if !showAliases && item.isAlias {
+                return false
+            }
+
+            guard !query.isEmpty else {
+                return true
+            }
+
+            return item.name.localizedCaseInsensitiveContains(query)
         }
     }
 
