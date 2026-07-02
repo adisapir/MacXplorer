@@ -55,6 +55,7 @@
 				DDC3BB022FF5524A009477D7 /* Sources */,
 				DDC3BB032FF5524A009477D7 /* Frameworks */,
 				DDC3BB042FF5524A009477D7 /* Resources */,
+				DDC3BBA02FF5524A009477D7 /* Copy Changelog */,
 			);
 			buildRules = (
 			);
@@ -113,6 +114,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		DDC3BBA02FF5524A009477D7 /* Copy Changelog */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/ChangeLog.md",
+			);
+			name = "Copy Changelog";
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ChangeLog.md",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "cp -f \"${SCRIPT_INPUT_FILE_0}\" \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		DDC3BB022FF5524A009477D7 /* Sources */ = {

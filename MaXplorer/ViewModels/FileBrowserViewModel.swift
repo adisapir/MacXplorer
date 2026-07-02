@@ -7,6 +7,15 @@ enum SelectionMode {
     case range
 }
 
+/// What the main detail surface is currently showing. The file browser is the
+/// default; the others are transient surfaces reached from the sidebar.
+enum DetailDestination: Equatable {
+    case files
+    case copyQueue
+    case about
+    case settings
+}
+
 struct CopyConflictRequest: Identifiable, Equatable {
     let id = UUID()
     let sources: [URL]
@@ -31,7 +40,7 @@ final class FileBrowserViewModel: ObservableObject {
     @Published private(set) var copiedItemURLs: [URL] = []
     @Published var isConnectToServerPresented = false
     @Published var isGoToFolderPresented = false
-    @Published var isCopyQueueVisible = false
+    @Published var detailDestination: DetailDestination = .files
     @Published var copyConflictRequest: CopyConflictRequest?
     @Published var pathText: String
     @Published var filterText = ""
@@ -246,7 +255,7 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     func navigate(to url: URL, recordHistory: Bool = true) {
-        isCopyQueueVisible = false
+        detailDestination = .files
         guard url != currentURL else {
             reload()
             return
@@ -651,11 +660,19 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     func showCopyQueue() {
-        isCopyQueueVisible = true
+        detailDestination = .copyQueue
     }
 
     func showCurrentFolder() {
-        isCopyQueueVisible = false
+        detailDestination = .files
+    }
+
+    func showAbout() {
+        detailDestination = .about
+    }
+
+    func showSettings() {
+        detailDestination = .settings
     }
 
     func isCut(_ item: FileItem) -> Bool {

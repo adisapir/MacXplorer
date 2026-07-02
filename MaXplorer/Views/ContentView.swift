@@ -30,9 +30,14 @@ private struct ActiveBrowserView: View {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
-            if model.isCopyQueueVisible {
+            switch model.detailDestination {
+            case .copyQueue:
                 CopyQueueView(queue: model.copyQueue)
-            } else {
+            case .about:
+                AboutView()
+            case .settings:
+                SettingsSurface()
+            case .files:
                 VStack(spacing: 0) {
                     BrowserToolbar()
                     FileTableView(
@@ -331,19 +336,35 @@ private struct BrowserTabButton: View {
 private struct SidebarView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
     private let copyQueueSelectionID = "macxplorer://copy-queue"
+    private let settingsSelectionID = "macxplorer://settings"
+    private let aboutSelectionID = "macxplorer://about"
 
     var body: some View {
         List(selection: Binding(
-            get: { model.isCopyQueueVisible ? copyQueueSelectionID : model.currentURL.absoluteString },
+            get: {
+                switch model.detailDestination {
+                case .copyQueue: return copyQueueSelectionID
+                case .settings: return settingsSelectionID
+                case .about: return aboutSelectionID
+                case .files: return model.currentURL.absoluteString
+                }
+            },
             set: { selection in
                 guard let selection else {
                     return
                 }
 
-                if selection == copyQueueSelectionID {
+                switch selection {
+                case copyQueueSelectionID:
                     model.showCopyQueue()
-                } else if let url = URL(string: selection) {
-                    model.navigate(to: url)
+                case settingsSelectionID:
+                    model.showSettings()
+                case aboutSelectionID:
+                    model.showAbout()
+                default:
+                    if let url = URL(string: selection) {
+                        model.navigate(to: url)
+                    }
                 }
             }
         )) {
@@ -397,6 +418,14 @@ private struct SidebarView: View {
                 }
                 .tag(copyQueueSelectionID)
             }
+
+            Section {
+                Label("Settings", systemImage: "gearshape")
+                    .tag(settingsSelectionID)
+
+                Label("About", systemImage: "info.circle")
+                    .tag(aboutSelectionID)
+            }
         }
         .listStyle(.sidebar)
         .symbolRenderingMode(.hierarchical)
@@ -430,6 +459,7 @@ private struct BrowserToolbar: View {
 
     var body: some View {
         VStack(spacing: 8) {
+            GlassEffectContainer(spacing: 10) {
             HStack(spacing: 10) {
                 ToolbarButtonGroup {
                     ToolbarIconButton(
@@ -522,16 +552,13 @@ private struct BrowserToolbar: View {
                         .frame(width: 220)
                 }
                 .font(.system(size: 13, weight: .medium))
-                .padding(.horizontal, 11)
-                .padding(.vertical, 7)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(.separator.opacity(0.6), lineWidth: 1)
-                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
                 .modernTooltip("Filter items shown in the current folder")
             }
             .symbolRenderingMode(.hierarchical)
+            }
 
             HStack(spacing: 8) {
                 Image(systemName: "point.topleft.down.curvedto.point.bottomright.up")
@@ -554,14 +581,9 @@ private struct BrowserToolbar: View {
                 .modernTooltip("Copy the selected item path, or the current folder path if nothing is selected (⌘⌥C)")
             }
             .symbolRenderingMode(.hierarchical)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(.background)
-            .overlay {
-                RoundedRectangle(cornerRadius: 7)
-                    .stroke(.separator, lineWidth: 1)
-            }
-            .macOS26GlassPanel()
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
         }
         .padding(12)
         .background(.bar)
@@ -699,6 +721,46 @@ private struct CopyQueueRow: View {
     }()
 }
 
+private struct SettingsSurface: View {
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                VStack(spacing: 10) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 40, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(Color.accentColor)
+
+                    Text("Settings")
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+
+                    Text("Tune appearance, tabs, and copy behavior.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 24)
+
+                SettingsView()
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 32)
+            .padding(.vertical, 28)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            LinearGradient(
+                colors: [Color.accentColor.opacity(0.12), Color.clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+        )
+    }
+}
+
 private struct ToolbarButtonGroup<Content: View>: View {
     @ViewBuilder var content: Content
 
@@ -706,12 +768,8 @@ private struct ToolbarButtonGroup<Content: View>: View {
         HStack(spacing: 4) {
             content
         }
-        .padding(3)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(.separator.opacity(0.55), lineWidth: 1)
-        }
+        .padding(4)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -1484,13 +1542,3 @@ private struct ManualFolderComboBox: NSViewRepresentable {
     }
 }
 
-private extension View {
-    @ViewBuilder
-    func macOS26GlassPanel() -> some View {
-        if #available(macOS 26.0, *) {
-            self.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 7))
-        } else {
-            self
-        }
-    }
-}

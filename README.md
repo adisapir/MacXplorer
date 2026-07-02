@@ -16,6 +16,9 @@ Current implementation status:
 - Alias-folder navigation inside the app.
 - Settings for appearance, tab limits, Go to Folder history, and concurrent copy limits.
 - Hidden-file toggle.
+- Settings and About surfaces presented on the main canvas from the sidebar (no separate window).
+- About surface with app info and a "View Changelog" button that shows the bundled changelog in a popup.
+- Liquid Glass styling on the toolbar, filter field, path bar, and the About/Settings surfaces.
 
 ## Keyboard Shortcuts
 
@@ -60,8 +63,9 @@ swift run MaXplorer
 
 ## Platform support
 
-MaXplorer targets macOS 15 and newer. macOS 26-specific features should be added behind availability checks so the app can adopt newer system polish without dropping macOS 15 support.
+MaXplorer targets macOS 26 and newer (deployment target 26.5), so it adopts the latest system polish — most notably Liquid Glass — directly, without availability checks.
 
 Current macOS 26 enhancements:
 
-- The path bar uses the system glass effect on macOS 26 and newer.
+- Liquid Glass surfaces for the toolbar button groups, filter field, and path bar.
+- The About and Settings canvases use Liquid Glass cards.

@@ -26,6 +26,12 @@ struct MaXplorerApp: App {
                 }
         }
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About MaXplorer") {
+                    model.showAbout()
+                }
+            }
+
             CommandGroup(replacing: .newItem) {
                 Button("New Tab") {
                     tabs.addTab()
