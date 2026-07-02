@@ -1,44 +1,110 @@
 import AppKit
+import CoreGraphics
 
+/// Draws the MaXplorer app icon: a modern, simple mash-up of Windows 11 File
+/// Explorer (yellow folder) and macOS Finder (blue), combining both brand
+/// colors — a yellow back/tab with a Finder-style two-tone blue front and a
+/// white page peeking out.
+///
+/// The same artwork is rendered to PNGs in `Assets.xcassets/AppIcon.appiconset`
+/// (the bundled Finder/Dock icon); this factory keeps the runtime-set dock icon
+/// in sync. Geometry is authored in a 1024x1024, top-left-origin space.
 enum AppIconFactory {
     static func makeIcon() -> NSImage {
-        let size = NSSize(width: 512, height: 512)
-        let image = NSImage(size: size)
-
-        image.lockFocus()
-        defer { image.unlockFocus() }
-
-        let bounds = NSRect(origin: .zero, size: size)
-        let background = NSBezierPath(roundedRect: bounds.insetBy(dx: 34, dy: 34), xRadius: 92, yRadius: 92)
-        NSColor(calibratedRed: 0.10, green: 0.37, blue: 0.72, alpha: 1).setFill()
-        background.fill()
-
-        let highlight = NSBezierPath(roundedRect: NSRect(x: 68, y: 276, width: 376, height: 118), xRadius: 44, yRadius: 44)
-        NSColor(calibratedRed: 0.19, green: 0.58, blue: 0.93, alpha: 1).setFill()
-        highlight.fill()
-
-        let folderTab = NSBezierPath(roundedRect: NSRect(x: 104, y: 318, width: 146, height: 76), xRadius: 28, yRadius: 28)
-        NSColor(calibratedRed: 0.44, green: 0.76, blue: 1.0, alpha: 1).setFill()
-        folderTab.fill()
-
-        let body = NSBezierPath(roundedRect: NSRect(x: 68, y: 116, width: 376, height: 252), xRadius: 54, yRadius: 54)
-        NSColor(calibratedRed: 0.94, green: 0.97, blue: 1.0, alpha: 1).setFill()
-        body.fill()
-
-        let sidebar = NSBezierPath(roundedRect: NSRect(x: 108, y: 154, width: 72, height: 176), xRadius: 22, yRadius: 22)
-        NSColor(calibratedRed: 0.75, green: 0.86, blue: 0.96, alpha: 1).setFill()
-        sidebar.fill()
-
-        NSColor(calibratedRed: 0.18, green: 0.38, blue: 0.62, alpha: 1).setStroke()
-        for y in [288, 242, 196] {
-            let row = NSBezierPath()
-            row.lineWidth = 18
-            row.lineCapStyle = .round
-            row.move(to: NSPoint(x: 214, y: y))
-            row.line(to: NSPoint(x: 368, y: y))
-            row.stroke()
+        let side: CGFloat = 1024
+        return NSImage(size: NSSize(width: side, height: side), flipped: false) { _ in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            draw(into: ctx, pixelSize: side)
+            return true
         }
+    }
 
-        return image
+    private static func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> CGColor {
+        CGColor(red: r / 255, green: g / 255, blue: b / 255, alpha: a)
+    }
+
+    private static func rr(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ radius: CGFloat) -> CGPath {
+        CGPath(roundedRect: CGRect(x: x, y: y, width: w, height: h),
+               cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+
+    private static func fillGradient(_ ctx: CGContext, _ path: CGPath, _ colors: [CGColor],
+                                     _ locs: [CGFloat], from: CGPoint, to: CGPoint) {
+        ctx.saveGState()
+        ctx.addPath(path)
+        ctx.clip()
+        let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                              colors: colors as CFArray, locations: locs)!
+        ctx.drawLinearGradient(grad, start: from, end: to,
+                               options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+        ctx.restoreGState()
+    }
+
+    private static func draw(into ctx: CGContext, pixelSize: CGFloat) {
+        let scale = pixelSize / 1024.0
+        ctx.saveGState()
+        ctx.scaleBy(x: scale, y: scale)
+        // Flip to a top-left origin, y-down space of 1024x1024.
+        ctx.translateBy(x: 0, y: 1024)
+        ctx.scaleBy(x: 1, y: -1)
+
+        // Tile background (macOS squircle).
+        let tile = rr(96, 96, 832, 832, 186)
+        fillGradient(ctx, tile,
+                     [rgb(253, 254, 255), rgb(230, 238, 249)], [0, 1],
+                     from: CGPoint(x: 512, y: 96), to: CGPoint(x: 512, y: 928))
+        ctx.saveGState()
+        ctx.addPath(tile)
+        ctx.setStrokeColor(rgb(10, 40, 80, 0.10))
+        ctx.setLineWidth(4)
+        ctx.strokePath()
+        ctx.restoreGState()
+
+        // Soft drop shadow beneath the folder.
+        ctx.saveGState()
+        ctx.setShadow(offset: CGSize(width: 0, height: 26), blur: 46, color: rgb(20, 50, 90, 0.28))
+        ctx.addPath(rr(250, 470, 524, 300, 46))
+        ctx.setFillColor(rgb(255, 255, 255, 1))
+        ctx.fillPath()
+        ctx.restoreGState()
+
+        // Yellow back folder + tab (Windows).
+        let yellow = CGMutablePath()
+        yellow.addPath(rr(238, 330, 250, 120, 40))
+        yellow.addPath(rr(238, 396, 548, 366, 52))
+        fillGradient(ctx, yellow,
+                     [rgb(255, 214, 92), rgb(247, 165, 24)], [0, 1],
+                     from: CGPoint(x: 512, y: 330), to: CGPoint(x: 512, y: 762))
+
+        // White page peeking above the blue front.
+        fillGradient(ctx, rr(300, 432, 424, 300, 22),
+                     [rgb(255, 255, 255), rgb(226, 233, 242)], [0, 1],
+                     from: CGPoint(x: 512, y: 432), to: CGPoint(x: 512, y: 732))
+
+        // Blue Finder-style front cover.
+        let front = rr(238, 486, 548, 276, 52)
+        fillGradient(ctx, front,
+                     [rgb(64, 170, 255), rgb(10, 108, 224)], [0, 1],
+                     from: CGPoint(x: 512, y: 486), to: CGPoint(x: 512, y: 762))
+        // Finder two-tone: deeper blue on the left, split diagonally.
+        ctx.saveGState()
+        ctx.addPath(front)
+        ctx.clip()
+        let twoTone = CGMutablePath()
+        twoTone.move(to: CGPoint(x: 238, y: 486))
+        twoTone.addLine(to: CGPoint(x: 520, y: 486))
+        twoTone.addLine(to: CGPoint(x: 360, y: 762))
+        twoTone.addLine(to: CGPoint(x: 238, y: 762))
+        twoTone.closeSubpath()
+        ctx.addPath(twoTone)
+        ctx.setFillColor(rgb(9, 88, 200, 0.55))
+        ctx.fillPath()
+        // Top highlight strip.
+        ctx.addPath(rr(238, 486, 548, 74, 52))
+        ctx.setFillColor(rgb(255, 255, 255, 0.16))
+        ctx.fillPath()
+        ctx.restoreGState()
+
+        ctx.restoreGState()
     }
 }

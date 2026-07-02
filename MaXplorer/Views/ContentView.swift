@@ -361,7 +361,7 @@ private struct SidebarView: View {
                 }
             }
             .dropDestination(for: URL.self) { urls, _ in
-                model.pinDroppedFavorites(urls)
+                _ = model.pinDroppedFavorites(urls)
             }
 
             Section(SidebarLocation.Group.devices.rawValue) {
