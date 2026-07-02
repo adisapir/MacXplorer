@@ -1,6 +1,6 @@
-# MacXplorer
+# MaXplorer
 
-MacXplorer is a native macOS file manager aimed at Windows Explorer-style navigation with a modern Mac feel.
+MaXplorer is a native macOS file manager aimed at Windows Explorer-style navigation with a modern Mac feel.
 
 Current implementation status:
 
@@ -52,12 +52,12 @@ swift build
 ## Run
 
 ```bash
-swift run MacXplorer
+swift run MaXplorer
 ```
 
 ## Platform support
 
-MacXplorer targets macOS 15 and newer. macOS 26-specific features should be added behind availability checks so the app can adopt newer system polish without dropping macOS 15 support.
+MaXplorer targets macOS 15 and newer. macOS 26-specific features should be added behind availability checks so the app can adopt newer system polish without dropping macOS 15 support.
 
 Current macOS 26 enhancements:
 

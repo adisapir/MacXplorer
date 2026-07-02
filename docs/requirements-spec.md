@@ -1,4 +1,4 @@
-# MacXplorer Requirements Specification
+# MaXplorer Requirements Specification
 
 Version: 0.2
 Date: 2026-06-14
@@ -6,7 +6,7 @@ Status: Implementation-aligned draft
 
 ## 1. Product Summary
 
-MacXplorer is a native macOS file manager for users who find Finder slow, ambiguous, or inefficient for everyday file work. It should feel familiar to Windows Explorer users while still looking and behaving like a modern Mac app.
+MaXplorer is a native macOS file manager for users who find Finder slow, ambiguous, or inefficient for everyday file work. It should feel familiar to Windows Explorer users while still looking and behaving like a modern Mac app.
 
 The first product goal is not to replace every Finder capability. The goal is to make high-frequency file workflows faster and clearer: folder navigation, network drive access, file operations, local and network search, path handling, terminal access, and repeatable copy/move/rename tasks.
 
@@ -257,7 +257,7 @@ Do not persist:
 ## 10. Risks and Constraints
 
 - macOS sandbox permissions may complicate broad filesystem access. We need to decide early whether the app is sandboxed for App Store compatibility or distributed outside the App Store with broader access.
-- Finder-level OS integration is limited. MacXplorer can be an alternative app, but cannot fully replace all Finder behaviors system-wide.
+- Finder-level OS integration is limited. MaXplorer can be an alternative app, but cannot fully replace all Finder behaviors system-wide.
 - SMB behavior depends on macOS networking APIs, server configuration, permissions, and indexing availability.
 - Preserving all metadata across volumes is nontrivial and needs focused testing.
 - Large-folder performance requires careful background enumeration, lazy metadata loading, and main-thread discipline.
@@ -318,7 +318,7 @@ P3:
 - Minimum macOS version: MacOS 15
 - Default Enter key behavior: first-run choice. (rename like Finder, open like Explorer) -> can be modified in configuration laters
 - Dual-pane is off by default default - optional from toolbar
-- MacXplorer will keep search direct/Spotlight-based for MVP. Later on this might change to a build a local filename index.
+- MaXplorer will keep search direct/Spotlight-based for MVP. Later on this might change to a build a local filename index.
 - "Open in Finder" should exist as an escape hatch for every location
 
 ## 15. Current Implementation Snapshot
@@ -345,7 +345,7 @@ File list:
 
 File actions:
 
-- Open selected folders inside MacXplorer, including alias folders resolved to their target.
+- Open selected folders inside MaXplorer, including alias folders resolved to their target.
 - Open selected non-folder items with the system default application.
 - Context menu actions for Open, Quick View, Open With, Cut, Copy, Rename, Move to Trash, Add to Favorites, Copy Path, Open in Terminal, and Reveal in Finder.
 - Quick View displays local file text in an app popup, strips non-displayable binary bytes when needed, and does not load buffers larger than 10 MB.

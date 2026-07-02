@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct MacXplorerApp: App {
+struct MaXplorerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var tabs = BrowserTabsViewModel()
     @StateObject private var settings = AppSettings()
@@ -12,7 +12,7 @@ struct MacXplorerApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("MacXplorer") {
+        WindowGroup("MaXplorer") {
             ContentView()
                 .environmentObject(tabs)
                 .environmentObject(settings)

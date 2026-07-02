@@ -44,7 +44,7 @@ private struct ActiveBrowserView: View {
                 }
             }
         }
-        .alert("MacXplorer", isPresented: Binding(
+        .alert("MaXplorer", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.clearError() } }
         )) {
