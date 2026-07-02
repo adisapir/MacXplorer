@@ -31,40 +31,32 @@ struct LocalFileSystemService: FileSystemService {
                 options: options
             )
 
-            let items = try await withThrowingTaskGroup(of: FileItem.self) { group in
-                for itemURL in urls {
-                    group.addTask {
-                        let values = try itemURL.resourceValues(forKeys: Set(keys))
-                        let isDirectory = values.isDirectory ?? false
-                        var aliasTargetURL: URL? = nil
-                        if values.isAliasFile == true {
-                            aliasTargetURL = await MainActor.run { Self.aliasTargetURL(for: itemURL) }
-                        }
-                        let aliasTargetValues = aliasTargetURL.flatMap(Self.fileTypeValues)
-                        let isAliasTargetDirectory = aliasTargetValues?.isDirectory ?? false
-                        let isAliasTargetPackage = aliasTargetValues?.isPackage ?? false
-                        let owner = (try? FileManager.default.attributesOfItem(atPath: itemURL.path))?[.ownerAccountName] as? String
-                        let dateTaken = Self.captureDate(for: itemURL)
-                        return await FileItem(
-                            url: itemURL,
-                            name: itemURL.lastPathComponent,
-                            typeDescription: values.localizedTypeDescription ?? "",
-                            isDirectory: isDirectory,
-                            isPackage: values.isPackage ?? false,
-                            isAlias: values.isAliasFile ?? false,
-                            aliasTargetURL: aliasTargetURL,
-                            isAliasTargetDirectory: isAliasTargetDirectory,
-                            isAliasTargetPackage: isAliasTargetPackage,
-                            isHidden: values.isHidden ?? false,
-                            size: values.fileSize.map(Int64.init),
-                            modifiedAt: values.contentModificationDate,
-                            createdAt: values.creationDate,
-                            dateTaken: dateTaken,
-                            owner: owner
-                        )
+            // Build items off the main actor with bounded concurrency. FileItem
+            // construction is nonisolated, so no per-file hop to the main actor,
+            // and at most `maxConcurrency` file-metadata reads run at once to
+            // avoid thread explosion on large folders.
+            let resourceKeys = keys
+            let maxConcurrency = 6
+            var items: [FileItem] = []
+            items.reserveCapacity(urls.count)
+
+            try await withThrowingTaskGroup(of: FileItem.self) { group in
+                var nextIndex = 0
+                let primeCount = min(maxConcurrency, urls.count)
+                while nextIndex < primeCount {
+                    let itemURL = urls[nextIndex]
+                    group.addTask { try Self.makeFileItem(for: itemURL, resourceKeys: resourceKeys) }
+                    nextIndex += 1
+                }
+
+                while let item = try await group.next() {
+                    items.append(item)
+                    if nextIndex < urls.count {
+                        let itemURL = urls[nextIndex]
+                        group.addTask { try Self.makeFileItem(for: itemURL, resourceKeys: resourceKeys) }
+                        nextIndex += 1
                     }
                 }
-                return try await group.reduce(into: [FileItem]()) { $0.append($1) }
             }
 
             let itemsWithOpensInApp = items.map { ($0, $0.opensInApp) }
@@ -173,7 +165,39 @@ struct LocalFileSystemService: FileSystemService {
         }.value
     }
 
-    private static func aliasTargetURL(for url: URL) -> URL? {
+    /// Fully off-main builder for a single directory entry.
+    nonisolated private static func makeFileItem(for itemURL: URL, resourceKeys: [URLResourceKey]) throws -> FileItem {
+        let values = try itemURL.resourceValues(forKeys: Set(resourceKeys))
+        let isDirectory = values.isDirectory ?? false
+
+        var aliasTargetURL: URL?
+        if values.isAliasFile == true {
+            aliasTargetURL = Self.aliasTargetURL(for: itemURL)
+        }
+
+        let aliasTargetValues = aliasTargetURL.flatMap(Self.fileTypeValues)
+        let owner = (try? FileManager.default.attributesOfItem(atPath: itemURL.path))?[.ownerAccountName] as? String
+
+        return FileItem(
+            url: itemURL,
+            name: itemURL.lastPathComponent,
+            typeDescription: values.localizedTypeDescription ?? "",
+            isDirectory: isDirectory,
+            isPackage: values.isPackage ?? false,
+            isAlias: values.isAliasFile ?? false,
+            aliasTargetURL: aliasTargetURL,
+            isAliasTargetDirectory: aliasTargetValues?.isDirectory ?? false,
+            isAliasTargetPackage: aliasTargetValues?.isPackage ?? false,
+            isHidden: values.isHidden ?? false,
+            size: values.fileSize.map(Int64.init),
+            modifiedAt: values.contentModificationDate,
+            createdAt: values.creationDate,
+            dateTaken: Self.captureDate(for: itemURL),
+            owner: owner
+        )
+    }
+
+    nonisolated private static func aliasTargetURL(for url: URL) -> URL? {
         try? URL(resolvingAliasFileAt: url, options: [.withoutUI]).standardizedFileURL
     }
 

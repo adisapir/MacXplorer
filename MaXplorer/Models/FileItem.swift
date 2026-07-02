@@ -20,7 +20,7 @@ struct FileItem: Identifiable, Hashable, Sendable {
     let owner: String?
     let isNetworkLocation: Bool
 
-    init(
+    nonisolated init(
         url: URL,
         name: String,
         typeDescription: String,
