@@ -261,7 +261,7 @@ private enum CopyWorker {
         }.value
     }
 
-    private static func byteCount(for url: URL) throws -> Int64 {
+    nonisolated private static func byteCount(for url: URL) throws -> Int64 {
         try Task.checkCancellation()
 
         var isDirectory: ObjCBool = false
@@ -291,7 +291,7 @@ private enum CopyWorker {
         return Int64(values.fileSize ?? 0)
     }
 
-    private static func copyItem(
+    nonisolated private static func copyItem(
         _ sourceURL: URL,
         to destinationURL: URL,
         overwrite: Bool,

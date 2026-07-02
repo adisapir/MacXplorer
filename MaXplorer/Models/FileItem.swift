@@ -49,7 +49,7 @@ struct FileItem: Identifiable, Hashable, Sendable {
 }
 
 extension FileItem {
-    var opensInApp: Bool {
+    nonisolated var opensInApp: Bool {
         guard !isNetworkLocation else {
             return false
         }

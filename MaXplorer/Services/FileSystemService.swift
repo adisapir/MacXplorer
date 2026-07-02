@@ -29,37 +29,45 @@ struct LocalFileSystemService: FileSystemService {
                 options: options
             )
 
-            let items = try urls.map { itemURL in
-                let values = try itemURL.resourceValues(forKeys: Set(keys))
-                let isDirectory = values.isDirectory ?? false
-                let aliasTargetURL = values.isAliasFile == true ? Self.aliasTargetURL(for: itemURL) : nil
-                let aliasTargetValues = aliasTargetURL.flatMap(Self.fileTypeValues)
-                let isAliasTargetDirectory = aliasTargetValues?.isDirectory ?? false
-                let isAliasTargetPackage = aliasTargetValues?.isPackage ?? false
-
-                return FileItem(
-                    url: itemURL,
-                    name: itemURL.lastPathComponent,
-                    typeDescription: values.localizedTypeDescription ?? "",
-                    isDirectory: isDirectory,
-                    isPackage: values.isPackage ?? false,
-                    isAlias: values.isAliasFile ?? false,
-                    aliasTargetURL: aliasTargetURL,
-                    isAliasTargetDirectory: isAliasTargetDirectory,
-                    isAliasTargetPackage: isAliasTargetPackage,
-                    isHidden: values.isHidden ?? false,
-                    size: values.fileSize.map(Int64.init),
-                    modifiedAt: values.contentModificationDate
-                )
-            }
-
-            return items.sorted { lhs, rhs in
-                if lhs.opensInApp != rhs.opensInApp {
-                    return lhs.opensInApp && !rhs.opensInApp
+            let items = try await withThrowingTaskGroup(of: FileItem.self) { group in
+                for itemURL in urls {
+                    group.addTask {
+                        let values = try itemURL.resourceValues(forKeys: Set(keys))
+                        let isDirectory = values.isDirectory ?? false
+                        var aliasTargetURL: URL? = nil
+                        if values.isAliasFile == true {
+                            aliasTargetURL = await MainActor.run { Self.aliasTargetURL(for: itemURL) }
+                        }
+                        let aliasTargetValues = aliasTargetURL.flatMap(Self.fileTypeValues)
+                        let isAliasTargetDirectory = aliasTargetValues?.isDirectory ?? false
+                        let isAliasTargetPackage = aliasTargetValues?.isPackage ?? false
+                        return await FileItem(
+                            url: itemURL,
+                            name: itemURL.lastPathComponent,
+                            typeDescription: values.localizedTypeDescription ?? "",
+                            isDirectory: isDirectory,
+                            isPackage: values.isPackage ?? false,
+                            isAlias: values.isAliasFile ?? false,
+                            aliasTargetURL: aliasTargetURL,
+                            isAliasTargetDirectory: isAliasTargetDirectory,
+                            isAliasTargetPackage: isAliasTargetPackage,
+                            isHidden: values.isHidden ?? false,
+                            size: values.fileSize.map(Int64.init),
+                            modifiedAt: values.contentModificationDate
+                        )
+                    }
                 }
-
-                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+                return try await group.reduce(into: [FileItem]()) { $0.append($1) }
             }
+
+            let itemsWithOpensInApp = items.map { ($0, $0.opensInApp) }
+            let sortedItems = itemsWithOpensInApp.sorted { lhs, rhs in
+                if lhs.1 != rhs.1 {
+                    return lhs.1 && !rhs.1
+                }
+                return lhs.0.name.localizedStandardCompare(rhs.0.name) == .orderedAscending
+            }
+            return sortedItems.map { $0.0 }
         }.value
     }
 
@@ -162,11 +170,11 @@ struct LocalFileSystemService: FileSystemService {
         try? URL(resolvingAliasFileAt: url, options: [.withoutUI]).standardizedFileURL
     }
 
-    private static func fileTypeValues(for url: URL) -> URLResourceValues? {
+    nonisolated private static func fileTypeValues(for url: URL) -> URLResourceValues? {
         try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
     }
 
-    private static func displayableText(from data: Data) -> String {
+    nonisolated private static func displayableText(from data: Data) -> String {
         if let text = String(data: data, encoding: .utf8), !containsControlCharacters(in: text) {
             return text
         }
@@ -185,7 +193,7 @@ struct LocalFileSystemService: FileSystemService {
         return String(String.UnicodeScalarView(scalars))
     }
 
-    private static func containsControlCharacters(in text: String) -> Bool {
+    nonisolated private static func containsControlCharacters(in text: String) -> Bool {
         text.unicodeScalars.contains { scalar in
             scalar.value < 32 && scalar != "\n" && scalar != "\r" && scalar != "\t"
         }
@@ -209,7 +217,7 @@ enum FileSystemError: LocalizedError {
     }
 }
 
-private func uniqueURL(forFolderNamed name: String, in directory: URL) throws -> URL {
+nonisolated private func uniqueURL(forFolderNamed name: String, in directory: URL) throws -> URL {
     var candidate = directory.appendingPathComponent(name)
     var suffix = 2
 
@@ -220,3 +228,4 @@ private func uniqueURL(forFolderNamed name: String, in directory: URL) throws ->
 
     return candidate
 }
+

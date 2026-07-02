@@ -42,7 +42,7 @@ final class FileBrowserViewModel: ObservableObject {
     @Published var quickViewContent: QuickViewContent?
     @Published var showHiddenFiles = false {
         didSet {
-            Task { await reload() }
+            reload()
         }
     }
     @Published var showAliases = true
@@ -248,7 +248,7 @@ final class FileBrowserViewModel: ObservableObject {
     func navigate(to url: URL, recordHistory: Bool = true) {
         isCopyQueueVisible = false
         guard url != currentURL else {
-            Task { await reload() }
+            reload()
             return
         }
 
@@ -260,7 +260,7 @@ final class FileBrowserViewModel: ObservableObject {
         currentURL = url
         pathText = url == Self.networkRootURL ? "Network" : url.path
         filterText = ""
-        Task { await reload() }
+        reload()
     }
 
     func goBack() {
@@ -539,7 +539,7 @@ final class FileBrowserViewModel: ObservableObject {
             }
 
             clearCutItems(containing: trashableItems.map(\.url))
-            Task { await reload() }
+            reload()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -660,6 +660,14 @@ final class FileBrowserViewModel: ObservableObject {
 
     func isCut(_ item: FileItem) -> Bool {
         cutItemURLs.contains(item.url.standardizedFileURL)
+    }
+
+    var canSelectAll: Bool { !displayedItems.isEmpty }
+
+    func selectAll() {
+        let ids = displayedItems.map(\.id)
+        selectedItemIDs = Set(ids)
+        selectionAnchorID = ids.first
     }
 
     func select(_ item: FileItem, mode: SelectionMode) {

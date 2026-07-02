@@ -482,7 +482,7 @@ private struct BrowserToolbar: View {
 
                     ToolbarIconButton(
                         systemName: "arrow.up.forward.square",
-                        help: "Reveal the selected item in Finder (⌘⇧R)"
+                        help: "Reveal the selected item in Finder (⌃⌘R)"
                     ) {
                         model.revealSelectedInFinder()
                     }

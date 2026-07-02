@@ -41,6 +41,12 @@ struct MaXplorerApp: App {
                 .keyboardShortcut("o", modifiers: .command)
                 .disabled(model.selectedItem == nil)
 
+                Button("Quick View") {
+                    model.quickViewSelectedItem()
+                }
+                .keyboardShortcut(.space, modifiers: [])
+                .disabled(!model.canQuickViewSelectedItem)
+
                 Button("New Folder") {
                     Task { await model.createFolder() }
                 }
@@ -52,7 +58,7 @@ struct MaXplorerApp: App {
                 Button("Rename") {
                     model.requestRenameSelected()
                 }
-                .keyboardShortcut(.space, modifiers: [])
+                .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(model.selectedItem?.isNetworkLocation ?? true)
 
                 Button("Move to Trash") {
@@ -73,7 +79,7 @@ struct MaXplorerApp: App {
                 Button("Reveal in Finder") {
                     model.revealSelectedInFinder()
                 }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .keyboardShortcut("r", modifiers: [.command, .control])
             }
 
             CommandGroup(replacing: .pasteboard) {
@@ -96,6 +102,12 @@ struct MaXplorerApp: App {
                 .keyboardShortcut("v", modifiers: .command)
 
                 Divider()
+
+                Button("Select All") {
+                    model.selectAll()
+                }
+                .keyboardShortcut("a", modifiers: .command)
+                .disabled(!model.canSelectAll)
 
                 Button("Copy Path") {
                     model.copySelectedPath()
