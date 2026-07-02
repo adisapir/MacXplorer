@@ -8,6 +8,7 @@ final class AppSettings: ObservableObject {
     private static let manualFolderHistoryLimitKey = "ManualFolderHistoryLimit"
     private static let manualFolderHistoryKey = "ManualFolderHistory"
     private static let maximumConcurrentCopiedFilesKey = "MaximumConcurrentCopiedFiles"
+    private static let visibleColumnsKey = "VisibleFileColumns"
     static let maximumConcurrentTabsRange = 5...50
     static let manualFolderHistoryLimitRange = 0...20
     static let maximumConcurrentCopiedFilesRange = 1...5
@@ -55,6 +56,18 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var visibleColumns: Set<FileColumn> {
+        didSet {
+            // "Name" can never be turned off, so at least one column always remains.
+            guard visibleColumns.contains(.name) else {
+                visibleColumns.insert(.name)
+                return
+            }
+
+            UserDefaults.standard.set(visibleColumns.map(\.rawValue), forKey: Self.visibleColumnsKey)
+        }
+    }
+
     @Published private(set) var manualFolderHistory: [String]
 
     init(defaults: UserDefaults = .standard) {
@@ -70,7 +83,28 @@ final class AppSettings: ObservableObject {
 
         let savedMaximumConcurrentCopiedFiles = defaults.object(forKey: Self.maximumConcurrentCopiedFilesKey) as? Int
         self.maximumConcurrentCopiedFiles = savedMaximumConcurrentCopiedFiles.map(Self.clampedMaximumConcurrentCopiedFiles) ?? 3
+
+        if let savedColumns = defaults.stringArray(forKey: Self.visibleColumnsKey) {
+            var columns = Set(savedColumns.compactMap(FileColumn.init(rawValue:)))
+            columns.insert(.name)
+            self.visibleColumns = columns
+        } else {
+            self.visibleColumns = FileColumn.defaultVisible
+        }
+
         trimManualFolderHistory()
+    }
+
+    func toggleColumn(_ column: FileColumn) {
+        guard !column.isRequired else {
+            return
+        }
+
+        if visibleColumns.contains(column) {
+            visibleColumns.remove(column)
+        } else {
+            visibleColumns.insert(column)
+        }
     }
 
     func addManualFolderToHistory(_ url: URL) {

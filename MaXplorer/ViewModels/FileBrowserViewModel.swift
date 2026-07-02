@@ -660,6 +660,61 @@ final class FileBrowserViewModel: ObservableObject {
         copyQueue.enqueue(request.sources, to: request.destinationDirectory, conflictResolution: resolution)
     }
 
+    /// Copies items dropped from Finder or another tab into this folder. Reuses
+    /// the same conflict flow as paste.
+    func importItems(_ urls: [URL], maximumConcurrentCopies: Int) {
+        guard currentURL.isFileURL else {
+            return
+        }
+
+        let destinationDirectory = currentURL.standardizedFileURL
+        let sources = urls
+            .map(\.standardizedFileURL)
+            .filter { $0.deletingLastPathComponent() != destinationDirectory }
+
+        guard !sources.isEmpty else {
+            return
+        }
+
+        let conflicts = sources.compactMap { source -> String? in
+            let destination = destinationDirectory.appendingPathComponent(source.lastPathComponent)
+            return FileManager.default.fileExists(atPath: destination.path) ? destination.lastPathComponent : nil
+        }
+
+        if !conflicts.isEmpty {
+            copyConflictRequest = CopyConflictRequest(
+                sources: sources,
+                destinationDirectory: destinationDirectory,
+                conflictingNames: conflicts
+            )
+            return
+        }
+
+        copyQueue.maximumConcurrentCopies = maximumConcurrentCopies
+        copyQueue.enqueue(sources, to: destinationDirectory, conflictResolution: .skip)
+    }
+
+    /// Reorders a pinned favorite so it lands ahead of `targetURL`. Built-in
+    /// favorites keep their fixed order; only user-pinned favorites reorder.
+    func moveFavorite(_ url: URL, before targetURL: URL) {
+        let source = url.standardizedFileURL
+        let target = targetURL.standardizedFileURL
+        guard source != target,
+              let fromIndex = pinnedFavoriteURLs.firstIndex(of: source),
+              let targetIndex = pinnedFavoriteURLs.firstIndex(of: target) else {
+            return
+        }
+
+        let moved = pinnedFavoriteURLs.remove(at: fromIndex)
+        let insertionIndex = pinnedFavoriteURLs.firstIndex(of: target) ?? targetIndex
+        pinnedFavoriteURLs.insert(moved, at: insertionIndex)
+        savePinnedFavorites()
+    }
+
+    func isPinnedFavorite(_ url: URL) -> Bool {
+        pinnedFavoriteURLs.contains(url.standardizedFileURL)
+    }
+
     func showCopyQueue() {
         detailDestination = .copyQueue
     }

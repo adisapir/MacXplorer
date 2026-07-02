@@ -1,5 +1,13 @@
 # Change Log
 
+## 2026-07-02 (later)
+
+- Drag & drop to copy files from Finder or another tab into the current folder.
+- Drag a file onto a tab to spring-load switch to it, then drop to copy in.
+- Reorder folder tabs by dragging; right-click a tab for Sort by Name / Close Duplicate Tabs.
+- Configurable file columns (Kind, Size, Date Modified/Created/Taken, Owner), remembered between runs; Name is always shown.
+- Sidebar rows gain a modern glass hover effect; drag folders in to pin and reorder favorites.
+
 ## 2026-07-02
 
 - Added keyboard shortcuts: Quick View (Space), Select All (⌘A), Rename (⌘⇧R); Reveal in Finder moved to ⌃⌘R.

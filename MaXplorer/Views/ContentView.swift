@@ -253,6 +253,7 @@ private struct QuickViewSheet: View {
 
 private struct BrowserTabStrip: View {
     @EnvironmentObject private var tabs: BrowserTabsViewModel
+    @EnvironmentObject private var settings: AppSettings
 
     // Chrome-like sizing: tabs share the available width but never grow past a
     // comfortable maximum, and shrink to fit as more tabs open.
@@ -274,9 +275,22 @@ private struct BrowserTabStrip: View {
                     BrowserTabButton(
                         model: tab.model,
                         isSelected: tab.id == tabs.selectedTabID,
-                        width: tabWidth
-                    ) {
-                        tabs.selectTab(tab.id)
+                        width: tabWidth,
+                        tabID: tab.id,
+                        onSelect: { tabs.selectTab(tab.id) },
+                        onReorder: { draggedID in tabs.moveTab(draggedID, before: tab.id) },
+                        onDropFiles: { urls in
+                            tab.model.importItems(urls, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+                        }
+                    )
+                    .contextMenu {
+                        Button("Sort by Name") {
+                            tabs.sortTabsByName()
+                        }
+
+                        Button("Close Duplicate Tabs") {
+                            tabs.closeDuplicateTabs()
+                        }
                     }
                 }
 
@@ -328,13 +342,19 @@ private struct BrowserTabButton: View {
     @ObservedObject var model: FileBrowserViewModel
     let isSelected: Bool
     let width: CGFloat
-    let action: () -> Void
+    let tabID: UUID
+    let onSelect: () -> Void
+    let onReorder: (UUID) -> Void
+    let onDropFiles: ([URL]) -> Void
+
     @State private var isHovering = false
+    @State private var isDropTargeted = false
+    @State private var springLoadTask: Task<Void, Never>?
 
     private let cornerRadius: CGFloat = 10
 
     var body: some View {
-        Button(action: action) {
+        Button(action: onSelect) {
             HStack(spacing: 6) {
                 if width >= 62 {
                     Image(systemName: model.isBrowsingNetwork ? "network" : "folder.fill")
@@ -357,13 +377,66 @@ private struct BrowserTabButton: View {
         .background(tabBackground, in: RoundedRectangle(cornerRadius: cornerRadius))
         .overlay {
             RoundedRectangle(cornerRadius: cornerRadius)
-                .stroke(isSelected ? Color(nsColor: .separatorColor).opacity(0.7) : .clear, lineWidth: 1)
+                .stroke(borderStyle, lineWidth: isDropTargeted ? 2 : 1)
         }
         .shadow(color: isSelected ? .black.opacity(0.12) : .clear, radius: 3, y: 1)
         .animation(.easeOut(duration: 0.13), value: isHovering)
         .animation(.easeOut(duration: 0.13), value: isSelected)
+        .animation(.easeOut(duration: 0.13), value: isDropTargeted)
         .onHover { isHovering = $0 }
+        .draggable(tabID.uuidString)
+        .dropDestination(for: String.self) { ids, _ in
+            guard let identifier = ids.first, let uuid = UUID(uuidString: identifier) else {
+                return false
+            }
+
+            onReorder(uuid)
+            return true
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            cancelSpringLoad()
+            onDropFiles(urls)
+            return true
+        } isTargeted: { targeted in
+            isDropTargeted = targeted
+            if targeted {
+                scheduleSpringLoad()
+            } else {
+                cancelSpringLoad()
+            }
+        }
         .modernTooltip(model.currentLocationText)
+    }
+
+    // Chrome-style spring loading: hovering a dragged file over a tab switches
+    // to it after a short delay so items can be dropped into that folder.
+    private func scheduleSpringLoad() {
+        springLoadTask?.cancel()
+        springLoadTask = Task {
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            guard !Task.isCancelled else {
+                return
+            }
+
+            onSelect()
+        }
+    }
+
+    private func cancelSpringLoad() {
+        springLoadTask?.cancel()
+        springLoadTask = nil
+    }
+
+    private var borderStyle: AnyShapeStyle {
+        if isDropTargeted {
+            return AnyShapeStyle(Color.accentColor)
+        }
+
+        if isSelected {
+            return AnyShapeStyle(Color(nsColor: .separatorColor).opacity(0.7))
+        }
+
+        return AnyShapeStyle(Color.clear)
     }
 
     private var tabBackground: AnyShapeStyle {
@@ -417,6 +490,7 @@ private struct SidebarView: View {
             Section(SidebarLocation.Group.favorites.rawValue) {
                 ForEach(model.sidebarLocations.filter { $0.group == .favorites }) { location in
                     Label(location.name, systemImage: location.systemImage)
+                        .sidebarHover()
                         .tag(location.url.absoluteString)
                         .contextMenu {
                             if location.canRemoveFromFavorites {
@@ -424,6 +498,10 @@ private struct SidebarView: View {
                                     model.removeFavorite(location.url)
                                 }
                             }
+                        }
+                        .draggable(location.url)
+                        .dropDestination(for: URL.self) { urls, _ in
+                            _ = handleFavoriteDrop(urls, before: location)
                         }
                 }
             }
@@ -434,6 +512,7 @@ private struct SidebarView: View {
             Section(SidebarLocation.Group.devices.rawValue) {
                 ForEach(model.sidebarLocations.filter { $0.group == .devices }) { location in
                     Label(location.name, systemImage: location.systemImage)
+                        .sidebarHover()
                         .tag(location.url.absoluteString)
                 }
             }
@@ -448,6 +527,7 @@ private struct SidebarView: View {
 
                 ForEach(model.sidebarLocations.filter { $0.group == .network }) { location in
                     Label(location.name, systemImage: location.systemImage)
+                        .sidebarHover()
                         .tag(location.url.absoluteString)
                 }
             }
@@ -471,16 +551,34 @@ private struct SidebarView: View {
                     .padding(.vertical, 2)
 
                 Label("Settings", systemImage: "gearshape")
-                    .tag(settingsSelectionID)
                     .foregroundStyle(.blue)
+                    .sidebarHover()
+                    .tag(settingsSelectionID)
 
                 Label("About", systemImage: "info.circle")
-                    .tag(aboutSelectionID)
                     .foregroundStyle(.blue)
+                    .sidebarHover()
+                    .tag(aboutSelectionID)
             }
         }
         .listStyle(.sidebar)
         .symbolRenderingMode(.hierarchical)
+    }
+
+    private func handleFavoriteDrop(_ urls: [URL], before location: SidebarLocation) -> Bool {
+        var didHandle = false
+
+        for url in urls {
+            if model.isPinnedFavorite(url) {
+                model.moveFavorite(url, before: location.url)
+            } else {
+                model.pinFavorite(url)
+            }
+
+            didHandle = true
+        }
+
+        return didHandle
     }
 }
 
@@ -507,6 +605,7 @@ private struct PulsingStatusDot: View {
 
 private struct BrowserToolbar: View {
     @EnvironmentObject private var model: FileBrowserViewModel
+    @EnvironmentObject private var settings: AppSettings
     @FocusState private var pathFocused: Bool
 
     var body: some View {
@@ -592,6 +691,29 @@ private struct BrowserToolbar: View {
                         isOn: $model.showAliases,
                         iconSize: 22
                     )
+                }
+
+                ToolbarButtonGroup {
+                    Menu {
+                        Section("Show Columns") {
+                            ForEach(FileColumn.allCases) { column in
+                                Toggle(column.title, isOn: Binding(
+                                    get: { settings.visibleColumns.contains(column) },
+                                    set: { _ in settings.toggleColumn(column) }
+                                ))
+                                .disabled(column.isRequired)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 14, weight: .semibold))
+                            .frame(width: 26, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .modernTooltip("Choose which columns are shown")
                 }
 
                 Spacer(minLength: 12)
@@ -1056,13 +1178,46 @@ private extension View {
     func modernTooltip(_ text: String) -> some View {
         modifier(ModernTooltipModifier(text: text))
     }
+
+    func sidebarHover() -> some View {
+        modifier(SidebarHoverModifier())
+    }
+}
+
+/// A subtle glass hover highlight for sidebar rows.
+private struct SidebarHoverModifier: ViewModifier {
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 3)
+            .padding(.horizontal, 6)
+            .background {
+                if isHovering {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(.thinMaterial)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(Color.primary.opacity(0.05))
+                        }
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+            .onHover { isHovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovering)
+    }
 }
 
 private struct FileTableView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
+    @EnvironmentObject private var settings: AppSettings
     @Binding var renameItem: FileItem?
     @Binding var renameText: String
     @Binding var itemsPendingTrash: [FileItem]
+    @State private var isDropTargeted = false
+
+    private var columns: Set<FileColumn> { settings.visibleColumns }
 
     var body: some View {
         ZStack {
@@ -1084,32 +1239,61 @@ private struct FileTableView: View {
                     .overlay { rowClickTarget(for: item) }
                     .draggable(item.url)
                 }
-                .width(min: 260, ideal: 360)
+                .width(min: 220, ideal: 320)
 
-                TableColumn("Kind", value: \.displayKind) { item in
-                    Text(item.displayKind)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .overlay { rowClickTarget(for: item) }
+                if columns.contains(.kind) {
+                    TableColumn("Kind", value: \.displayKind) { item in
+                        columnText(item.displayKind, for: item)
+                    }
+                    .width(min: 120, ideal: 170)
                 }
-                .width(min: 120, ideal: 180)
 
-                TableColumn("Size", value: \.sortSize) { item in
-                    Text(item.displaySize)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .overlay { rowClickTarget(for: item) }
+                if columns.contains(.size) {
+                    TableColumn("Size", value: \.sortSize) { item in
+                        columnText(item.displaySize, for: item, monospacedDigit: true)
+                    }
+                    .width(min: 80, ideal: 110)
                 }
-                .width(min: 80, ideal: 110)
 
-                TableColumn("Modified", value: \.sortModifiedAt) { item in
-                    Text(item.modifiedAt.map(Self.dateFormatter.string(from:)) ?? "")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .overlay { rowClickTarget(for: item) }
+                if columns.contains(.dateModified) {
+                    TableColumn("Date Modified", value: \.sortModifiedAt) { item in
+                        columnText(item.displayModified, for: item)
+                    }
+                    .width(min: 150, ideal: 180)
                 }
-                .width(min: 150, ideal: 180)
+
+                if columns.contains(.dateCreated) {
+                    TableColumn("Date Created", value: \.sortCreatedAt) { item in
+                        columnText(item.displayCreated, for: item)
+                    }
+                    .width(min: 150, ideal: 180)
+                }
+
+                if columns.contains(.dateTaken) {
+                    TableColumn("Date Taken", value: \.sortDateTaken) { item in
+                        columnText(item.displayDateTaken, for: item)
+                    }
+                    .width(min: 150, ideal: 180)
+                }
+
+                if columns.contains(.owner) {
+                    TableColumn("Owner", value: \.sortOwner) { item in
+                        columnText(item.displayOwner, for: item)
+                    }
+                    .width(min: 100, ideal: 140)
+                }
+            }
+            .dropDestination(for: URL.self) { urls, _ in
+                model.importItems(urls, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+                return true
+            } isTargeted: { isDropTargeted = $0 }
+            .overlay {
+                if isDropTargeted {
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                        .padding(2)
+                        .allowsHitTesting(false)
+                }
             }
             .contextMenu(forSelectionType: FileItem.ID.self) { selection in
                 Button("Open") {
@@ -1315,12 +1499,14 @@ private struct FileTableView: View {
         }
     }
 
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter
-    }()
+    @ViewBuilder
+    private func columnText(_ text: String, for item: FileItem, monospacedDigit: Bool = false) -> some View {
+        Text(text)
+            .foregroundStyle(.secondary)
+            .font(monospacedDigit ? .body.monospacedDigit() : .body)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay { rowClickTarget(for: item) }
+    }
 }
 
 private struct StatusBar: View {

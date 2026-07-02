@@ -19,6 +19,9 @@ Current implementation status:
 - Settings and About surfaces presented on the main canvas from the sidebar (no separate window).
 - About surface with app info and a "View Changelog" button that shows the bundled changelog in a popup.
 - Liquid Glass styling on the toolbar, filter field, path bar, and the About/Settings surfaces.
+- Drag & drop: copy from Finder or another tab, spring-loaded tab switching, tab reordering, and favorite pinning/reordering.
+- Configurable, persisted file columns (Kind, Size, Date Modified/Created/Taken, Owner); Name is always shown.
+- Tab right-click menu: Sort by Name and Close Duplicate Tabs.
 
 ## Keyboard Shortcuts
 

@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 protocol FileSystemService: Sendable {
     func listDirectory(at url: URL, showHiddenFiles: Bool) async throws -> [FileItem]
@@ -12,6 +13,7 @@ protocol FileSystemService: Sendable {
 struct LocalFileSystemService: FileSystemService {
     private let keys: [URLResourceKey] = [
         .contentModificationDateKey,
+        .creationDateKey,
         .fileSizeKey,
         .isAliasFileKey,
         .isDirectoryKey,
@@ -41,6 +43,8 @@ struct LocalFileSystemService: FileSystemService {
                         let aliasTargetValues = aliasTargetURL.flatMap(Self.fileTypeValues)
                         let isAliasTargetDirectory = aliasTargetValues?.isDirectory ?? false
                         let isAliasTargetPackage = aliasTargetValues?.isPackage ?? false
+                        let owner = (try? FileManager.default.attributesOfItem(atPath: itemURL.path))?[.ownerAccountName] as? String
+                        let dateTaken = Self.captureDate(for: itemURL)
                         return await FileItem(
                             url: itemURL,
                             name: itemURL.lastPathComponent,
@@ -53,7 +57,10 @@ struct LocalFileSystemService: FileSystemService {
                             isAliasTargetPackage: isAliasTargetPackage,
                             isHidden: values.isHidden ?? false,
                             size: values.fileSize.map(Int64.init),
-                            modifiedAt: values.contentModificationDate
+                            modifiedAt: values.contentModificationDate,
+                            createdAt: values.creationDate,
+                            dateTaken: dateTaken,
+                            owner: owner
                         )
                     }
                 }
@@ -172,6 +179,60 @@ struct LocalFileSystemService: FileSystemService {
 
     nonisolated private static func fileTypeValues(for url: URL) -> URLResourceValues? {
         try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+    }
+
+    nonisolated private static let captureDateExtensions: Set<String> = [
+        "jpg", "jpeg", "heic", "heif", "tiff", "tif", "png", "gif",
+        "dng", "cr2", "cr3", "nef", "arw", "raf", "rw2", "orf"
+    ]
+
+    /// Best-effort "Date Taken" for image files, read from EXIF/TIFF metadata
+    /// without decoding the full image. Returns nil for non-image files.
+    nonisolated private static func captureDate(for url: URL) -> Date? {
+        guard captureDateExtensions.contains(url.pathExtension.lowercased()) else {
+            return nil
+        }
+
+        guard
+            let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        else {
+            return nil
+        }
+
+        if let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any],
+           let raw = (exif[kCGImagePropertyExifDateTimeOriginal] as? String)
+               ?? (exif[kCGImagePropertyExifDateTimeDigitized] as? String),
+           let date = parseExifDate(raw) {
+            return date
+        }
+
+        if let tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any],
+           let raw = tiff[kCGImagePropertyTIFFDateTime] as? String,
+           let date = parseExifDate(raw) {
+            return date
+        }
+
+        return nil
+    }
+
+    /// Parses the EXIF `yyyy:MM:dd HH:mm:ss` format without a shared
+    /// (non-thread-safe) DateFormatter, since listing runs concurrently.
+    nonisolated private static func parseExifDate(_ string: String) -> Date? {
+        let components = string.split { $0 == ":" || $0 == " " }.compactMap { Int($0) }
+        guard components.count >= 6 else {
+            return nil
+        }
+
+        var dateComponents = DateComponents()
+        dateComponents.year = components[0]
+        dateComponents.month = components[1]
+        dateComponents.day = components[2]
+        dateComponents.hour = components[3]
+        dateComponents.minute = components[4]
+        dateComponents.second = components[5]
+
+        return Calendar.current.date(from: dateComponents)
     }
 
     nonisolated private static func displayableText(from data: Data) -> String {
