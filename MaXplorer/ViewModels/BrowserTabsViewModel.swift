@@ -9,14 +9,33 @@ final class BrowserTabsViewModel: ObservableObject {
     }
 
     @Published private(set) var tabs: [BrowserTab]
-    @Published var selectedTabID: BrowserTab.ID
+    @Published var selectedTabID: BrowserTab.ID {
+        didSet {
+            observeActiveModel()
+        }
+    }
     @Published private(set) var maximumConcurrentTabs: Int
+
+    // Forwards the active tab's model changes so that anything observing this
+    // object (notably the App scene's `.commands`, which cannot observe the
+    // per-tab model directly) re-evaluates when selection or contents change.
+    // Without this, menu items whose `.disabled` state depends on the model
+    // stay stuck at their launch-time value and their keyboard shortcuts never
+    // fire once enabled.
+    private var activeModelObservation: AnyCancellable?
 
     init(maximumConcurrentTabs: Int = 20) {
         let initialTab = Self.makeTab()
         self.tabs = [initialTab]
         self.selectedTabID = initialTab.id
         self.maximumConcurrentTabs = Self.clampedTabLimit(maximumConcurrentTabs)
+        observeActiveModel()
+    }
+
+    private func observeActiveModel() {
+        activeModelObservation = activeModel.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
 
     var activeTab: BrowserTab {
