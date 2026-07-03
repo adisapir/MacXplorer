@@ -9,14 +9,40 @@ final class BrowserTabsViewModel: ObservableObject {
     }
 
     @Published private(set) var tabs: [BrowserTab]
-    @Published var selectedTabID: BrowserTab.ID
+    @Published var selectedTabID: BrowserTab.ID {
+        didSet {
+            observeActiveModel()
+        }
+    }
     @Published private(set) var maximumConcurrentTabs: Int
+    @Published var showHiddenFiles = false {
+        didSet { for tab in tabs { tab.model.showHiddenFiles = showHiddenFiles } }
+    }
+    @Published var showAliases = true {
+        didSet { for tab in tabs { tab.model.showAliases = showAliases } }
+    }
+
+    // Forwards the active tab's model changes so that anything observing this
+    // object (notably the App scene's `.commands`, which cannot observe the
+    // per-tab model directly) re-evaluates when selection or contents change.
+    // Without this, menu items whose `.disabled` state depends on the model
+    // stay stuck at their launch-time value and their keyboard shortcuts never
+    // fire once enabled.
+    private var activeModelObservation: AnyCancellable?
+    private var listingOptions = DirectoryListingOptions()
 
     init(maximumConcurrentTabs: Int = 20) {
         let initialTab = Self.makeTab()
         self.tabs = [initialTab]
         self.selectedTabID = initialTab.id
         self.maximumConcurrentTabs = Self.clampedTabLimit(maximumConcurrentTabs)
+        observeActiveModel()
+    }
+
+    private func observeActiveModel() {
+        activeModelObservation = activeModel.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
 
     var activeTab: BrowserTab {
@@ -41,8 +67,20 @@ final class BrowserTabsViewModel: ObservableObject {
         }
 
         let tab = Self.makeTab()
+        tab.model.setListingOptions(listingOptions)
+        tab.model.showHiddenFiles = showHiddenFiles
+        tab.model.showAliases = showAliases
         tabs.append(tab)
         selectedTabID = tab.id
+    }
+
+    /// Propagates the file-listing options (which slow columns to fetch) to
+    /// every tab so switching tabs stays consistent.
+    func applyListingOptions(_ options: DirectoryListingOptions) {
+        listingOptions = options
+        for tab in tabs {
+            tab.model.setListingOptions(options)
+        }
     }
 
     func updateMaximumConcurrentTabs(_ maximumConcurrentTabs: Int) {
@@ -56,6 +94,74 @@ final class BrowserTabsViewModel: ObservableObject {
 
         selectedTabID = tabID
         activeModel.showCurrentFolder()
+    }
+
+    func closeTab(_ tabID: BrowserTab.ID) {
+        guard tabs.count > 1, let index = tabs.firstIndex(where: { $0.id == tabID }) else {
+            return
+        }
+
+        let wasSelected = selectedTabID == tabID
+        tabs.remove(at: index)
+
+        if wasSelected {
+            let neighbor = tabs[min(index, tabs.count - 1)]
+            selectedTabID = neighbor.id
+        }
+    }
+
+    /// Moves the dragged tab so that it lands ahead of `targetID` (used by the
+    /// tab strip's drag-to-reorder).
+    func moveTab(_ tabID: BrowserTab.ID, before targetID: BrowserTab.ID) {
+        guard tabID != targetID,
+              let fromIndex = tabs.firstIndex(where: { $0.id == tabID }),
+              let targetIndex = tabs.firstIndex(where: { $0.id == targetID }) else {
+            return
+        }
+
+        let moved = tabs.remove(at: fromIndex)
+        let insertionIndex = tabs.firstIndex(where: { $0.id == targetID }) ?? targetIndex
+        tabs.insert(moved, at: insertionIndex)
+    }
+
+    func duplicateTab(_ tabID: BrowserTab.ID) {
+        guard canAddTab, let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
+        let source = tabs[index]
+        let tab = Self.makeTab()
+        tab.model.setListingOptions(listingOptions)
+        tab.model.showHiddenFiles = showHiddenFiles
+        tab.model.showAliases = showAliases
+        tab.model.navigate(to: source.model.currentURL)
+        tabs.insert(tab, at: index + 1)
+        selectedTabID = tab.id
+    }
+
+    func sortTabsByName() {
+        tabs.sort { lhs, rhs in
+            lhs.model.tabTitle.localizedStandardCompare(rhs.model.tabTitle) == .orderedAscending
+        }
+    }
+
+    /// Keeps the first tab pointing at each location and closes the rest.
+    func closeDuplicateTabs() {
+        var seenLocations = Set<String>()
+        var survivors: [BrowserTab] = []
+
+        for tab in tabs {
+            let key = tab.model.currentURL.standardizedFileURL.absoluteString
+            if seenLocations.insert(key).inserted {
+                survivors.append(tab)
+            }
+        }
+
+        guard survivors.count != tabs.count else {
+            return
+        }
+
+        tabs = survivors
+        if !survivors.contains(where: { $0.id == selectedTabID }) {
+            selectedTabID = survivors[0].id
+        }
     }
 
     func selectNextTab() {

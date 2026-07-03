@@ -55,6 +55,8 @@
 				DDC3BB022FF5524A009477D7 /* Sources */,
 				DDC3BB032FF5524A009477D7 /* Frameworks */,
 				DDC3BB042FF5524A009477D7 /* Resources */,
+				DDC3BBA02FF5524A009477D7 /* Copy Changelog */,
+				DDC3BBA12FF5524A009477D7 /* Copy README */,
 			);
 			buildRules = (
 			);
@@ -114,6 +116,43 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		DDC3BBA02FF5524A009477D7 /* Copy Changelog */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/ChangeLog.md",
+			);
+			name = "Copy Changelog";
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ChangeLog.md",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			sandboxedScriptExecution = 0;
+			shellPath = /bin/sh;
+			shellScript = "cp -f \"${SCRIPT_INPUT_FILE_0}\" \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+		};
+		DDC3BBA12FF5524A009477D7 /* Copy README */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/README.md",
+			);
+			name = "Copy README";
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/README.md",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			sandboxedScriptExecution = 0;
+			shellPath = /bin/sh;
+			shellScript = "cp -f \"${SCRIPT_INPUT_FILE_0}\" \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		DDC3BB022FF5524A009477D7 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -163,7 +202,7 @@
 				DEVELOPMENT_TEAM = 6MF64SK72Z;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -227,7 +266,7 @@
 				DEVELOPMENT_TEAM = 6MF64SK72Z;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -267,7 +306,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.01;
 				PRODUCT_BUNDLE_IDENTIFIER = doccolabs.MaXplorer;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -302,7 +341,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.01;
 				PRODUCT_BUNDLE_IDENTIFIER = doccolabs.MaXplorer;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

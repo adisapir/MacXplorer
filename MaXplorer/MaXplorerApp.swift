@@ -20,17 +20,33 @@ struct MaXplorerApp: App {
                 .frame(minWidth: 980, minHeight: 620)
                 .onAppear {
                     tabs.updateMaximumConcurrentTabs(settings.maximumConcurrentTabs)
+                    tabs.applyListingOptions(DirectoryListingOptions(columns: settings.visibleColumns))
                 }
                 .onChange(of: settings.maximumConcurrentTabs) { _, maximumConcurrentTabs in
                     tabs.updateMaximumConcurrentTabs(maximumConcurrentTabs)
                 }
+                .onChange(of: settings.visibleColumns) { _, visibleColumns in
+                    tabs.applyListingOptions(DirectoryListingOptions(columns: visibleColumns))
+                }
         }
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About MaXplorer") {
+                    model.showAbout()
+                }
+            }
+
             CommandGroup(replacing: .newItem) {
                 Button("New Tab") {
                     tabs.addTab()
                 }
                 .keyboardShortcut("t", modifiers: .command)
+                .disabled(!tabs.canAddTab)
+
+                Button("Duplicate Tab") {
+                    tabs.duplicateTab(tabs.selectedTabID)
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
                 .disabled(!tabs.canAddTab)
 
                 Divider()
@@ -40,6 +56,12 @@ struct MaXplorerApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
                 .disabled(model.selectedItem == nil)
+
+                Button("Quick View") {
+                    model.quickViewSelectedItem()
+                }
+                .keyboardShortcut(.space, modifiers: [])
+                .disabled(!model.canQuickViewSelectedItem)
 
                 Button("New Folder") {
                     Task { await model.createFolder() }
@@ -52,7 +74,7 @@ struct MaXplorerApp: App {
                 Button("Rename") {
                     model.requestRenameSelected()
                 }
-                .keyboardShortcut(.space, modifiers: [])
+                .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(model.selectedItem?.isNetworkLocation ?? true)
 
                 Button("Move to Trash") {
@@ -73,7 +95,7 @@ struct MaXplorerApp: App {
                 Button("Reveal in Finder") {
                     model.revealSelectedInFinder()
                 }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .keyboardShortcut("r", modifiers: [.command, .control])
             }
 
             CommandGroup(replacing: .pasteboard) {
@@ -89,13 +111,17 @@ struct MaXplorerApp: App {
                 .disabled(!model.canCutSelectedItem)
 
                 Button("Paste") {
-                    Task {
-                        await model.pasteItems(maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
-                    }
+                    model.pasteItems(maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
                 }
                 .keyboardShortcut("v", modifiers: .command)
 
                 Divider()
+
+                Button("Select All") {
+                    model.selectAll()
+                }
+                .keyboardShortcut("a", modifiers: .command)
+                .disabled(!model.canSelectAll)
 
                 Button("Copy Path") {
                     model.copySelectedPath()
@@ -104,21 +130,22 @@ struct MaXplorerApp: App {
             }
 
             CommandMenu("View") {
+                Button("Filter Items") {
+                    model.shouldFocusFilter = true
+                }
+                .keyboardShortcut("f", modifiers: .command)
+
+                Divider()
+
                 Button("Reload") {
                     model.reload()
                 }
                 .keyboardShortcut("r", modifiers: .command)
 
-                Toggle("Show Hidden Files", isOn: Binding(
-                    get: { model.showHiddenFiles },
-                    set: { model.showHiddenFiles = $0 }
-                ))
+                Toggle("Show Hidden Files", isOn: $tabs.showHiddenFiles)
                     .keyboardShortcut(".", modifiers: [.command, .shift])
 
-                Toggle("Show Aliases", isOn: Binding(
-                    get: { model.showAliases },
-                    set: { model.showAliases = $0 }
-                ))
+                Toggle("Show Aliases", isOn: $tabs.showAliases)
                     .keyboardShortcut("a", modifiers: [.command, .shift])
             }
 

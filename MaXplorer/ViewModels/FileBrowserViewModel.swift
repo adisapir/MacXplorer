@@ -7,11 +7,20 @@ enum SelectionMode {
     case range
 }
 
+/// What the main detail surface is currently showing. The file browser is the
+/// default; the others are transient surfaces reached from the sidebar.
+enum DetailDestination: Equatable {
+    case files
+    case copyQueue
+    case about
+    case settings
+}
+
 struct CopyConflictRequest: Identifiable, Equatable {
     let id = UUID()
-    let sources: [URL]
-    let destinationDirectory: URL
-    let conflictingNames: [String]
+    let conflictingName: String
+    let conflictNumber: Int
+    let totalConflicts: Int
 }
 
 @MainActor
@@ -19,7 +28,7 @@ final class FileBrowserViewModel: ObservableObject {
     private static let maximumQuickViewBytes = 10 * 1024 * 1024
     private static let pinnedFavoritesKey = "PinnedFavoritePaths"
     private static let removedBuiltInFavoritesKey = "RemovedBuiltInFavoritePaths"
-    private static let networkRootURL = URL(string: "macxplorer://network")!
+    private static let networkRootURL = URL(string: "maxplorer://network")!
 
     @Published private(set) var currentURL: URL
     @Published private(set) var items: [FileItem] = []
@@ -31,10 +40,11 @@ final class FileBrowserViewModel: ObservableObject {
     @Published private(set) var copiedItemURLs: [URL] = []
     @Published var isConnectToServerPresented = false
     @Published var isGoToFolderPresented = false
-    @Published var isCopyQueueVisible = false
+    @Published var detailDestination: DetailDestination = .files
     @Published var copyConflictRequest: CopyConflictRequest?
     @Published var pathText: String
     @Published var filterText = ""
+    @Published var shouldFocusFilter = false
     @Published var selectedItemIDs: Set<FileItem.ID> = []
     @Published var sortOrder = [KeyPathComparator(\FileItem.name)]
     @Published var renameRequest: FileItem?
@@ -42,7 +52,7 @@ final class FileBrowserViewModel: ObservableObject {
     @Published var quickViewContent: QuickViewContent?
     @Published var showHiddenFiles = false {
         didSet {
-            Task { await reload() }
+            reload()
         }
     }
     @Published var showAliases = true
@@ -54,6 +64,22 @@ final class FileBrowserViewModel: ObservableObject {
     private var forwardStack: [URL] = []
     private var loadGeneration = 0
     private var selectionAnchorID: FileItem.ID?
+    private var destinationBeforeAuxiliaryDetail: DetailDestination = .files
+    private var listingOptions = DirectoryListingOptions()
+    private var conflictSession: ConflictSession?
+
+    private struct ConflictSession {
+        enum Operation {
+            case copy(maximumConcurrentCopies: Int)
+            case move(shouldClearCut: Bool)
+        }
+        let allSources: [URL]
+        let destinationDirectory: URL
+        let operation: Operation
+        var approvedItems: [(source: URL, shouldOverwrite: Bool)]
+        var remainingConflictIndices: [Int]
+        let totalConflicts: Int
+    }
 
     init(fileSystem: FileSystemService) {
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
@@ -208,10 +234,22 @@ final class FileBrowserViewModel: ObservableObject {
         Task { await self.reload(selecting: nil) }
     }
 
+    /// Updates which extra (slow) per-file metadata is fetched, reloading only
+    /// if it actually changed.
+    func setListingOptions(_ options: DirectoryListingOptions) {
+        guard options != listingOptions else {
+            return
+        }
+
+        listingOptions = options
+        reload()
+    }
+
     private func reload(selecting itemID: FileItem.ID?) async {
         let target = currentURL
         let showHiddenFiles = showHiddenFiles
         let fileSystem = fileSystem
+        let listingOptions = listingOptions
         loadGeneration += 1
         let generation = loadGeneration
         isLoading = true
@@ -222,7 +260,7 @@ final class FileBrowserViewModel: ObservableObject {
                 if target == Self.networkRootURL {
                     loadedItems = await networkItems()
                 } else {
-                    loadedItems = try await fileSystem.listDirectory(at: target, showHiddenFiles: showHiddenFiles)
+                    loadedItems = try await fileSystem.listDirectory(at: target, showHiddenFiles: showHiddenFiles, options: listingOptions)
                 }
 
                 guard generation == loadGeneration else {
@@ -246,9 +284,9 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     func navigate(to url: URL, recordHistory: Bool = true) {
-        isCopyQueueVisible = false
+        detailDestination = .files
         guard url != currentURL else {
-            Task { await reload() }
+            reload()
             return
         }
 
@@ -260,7 +298,7 @@ final class FileBrowserViewModel: ObservableObject {
         currentURL = url
         pathText = url == Self.networkRootURL ? "Network" : url.path
         filterText = ""
-        Task { await reload() }
+        reload()
     }
 
     func goBack() {
@@ -514,6 +552,13 @@ final class FileBrowserViewModel: ObservableObject {
         }
     }
 
+    func moveItems(_ urls: [URL], to destinationFolder: URL) {
+        let dest = destinationFolder.standardizedFileURL
+        let sources = urls.map(\.standardizedFileURL).filter { $0.deletingLastPathComponent() != dest }
+        guard !sources.isEmpty else { return }
+        beginConflictResolution(sources: sources, to: dest, operation: .move(shouldClearCut: false))
+    }
+
     func moveSelectedToTrash() async {
         let itemsToTrash = selectedItems.filter { !$0.isNetworkLocation }
         guard !itemsToTrash.isEmpty else {
@@ -539,7 +584,7 @@ final class FileBrowserViewModel: ObservableObject {
             }
 
             clearCutItems(containing: trashableItems.map(\.url))
-            Task { await reload() }
+            reload()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -574,92 +619,203 @@ final class FileBrowserViewModel: ObservableObject {
         SystemActions.copyFileURLs(copiedURLs)
     }
 
-    func pasteItems(maximumConcurrentCopies: Int) async {
+    func pasteItems(maximumConcurrentCopies: Int) {
         if !cutItemURLs.isEmpty {
-            await pasteCutItems()
+            pasteCutItems()
             return
         }
-
-        pasteCopiedItems(maximumConcurrentCopies: maximumConcurrentCopies, conflictResolution: .cancel)
+        pasteCopiedItems(maximumConcurrentCopies: maximumConcurrentCopies)
     }
 
-    func pasteCutItems() async {
-        guard !cutItemURLs.isEmpty else {
-            return
-        }
-
-        do {
-            let movedURLs = try await fileSystem.moveItems(cutItemURLs, to: currentURL)
-            clearCutItems(containing: cutItemURLs)
-            await reload(selecting: movedURLs.first)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+    func pasteCutItems() {
+        guard !cutItemURLs.isEmpty, currentURL.isFileURL else { return }
+        let dest = currentURL.standardizedFileURL
+        let sources = cutItemURLs.filter { $0.deletingLastPathComponent() != dest }
+        guard !sources.isEmpty else { return }
+        beginConflictResolution(sources: sources, to: dest, operation: .move(shouldClearCut: true))
     }
 
-    func pasteCopiedItems(maximumConcurrentCopies: Int, conflictResolution: CopyConflictResolution) {
-        guard currentURL.isFileURL else {
-            return
-        }
-
+    func pasteCopiedItems(maximumConcurrentCopies: Int) {
+        guard currentURL.isFileURL else { return }
         let copiedSources = copiedItemURLs.isEmpty ? SystemActions.fileURLsFromPasteboard() : copiedItemURLs
-        guard !copiedSources.isEmpty else {
-            return
-        }
-
-        let destinationDirectory = currentURL.standardizedFileURL
-        let sources = copiedSources.filter { source in
-            source.standardizedFileURL.deletingLastPathComponent() != destinationDirectory
-        }
-
-        guard !sources.isEmpty else {
-            return
-        }
-
-        let conflicts = sources.compactMap { source -> String? in
-            let destination = destinationDirectory.appendingPathComponent(source.lastPathComponent)
-            return FileManager.default.fileExists(atPath: destination.path) ? destination.lastPathComponent : nil
-        }
-
-        if !conflicts.isEmpty, conflictResolution == .cancel {
-            copyConflictRequest = CopyConflictRequest(
-                sources: sources,
-                destinationDirectory: destinationDirectory,
-                conflictingNames: conflicts
-            )
-            return
-        }
-
-        copyConflictRequest = nil
-        let enqueueResolution: CopyConflictResolution = conflictResolution == .cancel ? .skip : conflictResolution
-        copyQueue.maximumConcurrentCopies = maximumConcurrentCopies
-        copyQueue.enqueue(sources, to: destinationDirectory, conflictResolution: enqueueResolution)
+        guard !copiedSources.isEmpty else { return }
+        let dest = currentURL.standardizedFileURL
+        let sources = copiedSources.filter { $0.standardizedFileURL.deletingLastPathComponent() != dest }
+        guard !sources.isEmpty else { return }
+        beginConflictResolution(sources: sources, to: dest, operation: .copy(maximumConcurrentCopies: maximumConcurrentCopies))
     }
 
-    func resolveCopyConflict(_ resolution: CopyConflictResolution, maximumConcurrentCopies: Int) {
-        guard let request = copyConflictRequest else {
-            return
-        }
-
+    func resolveCopyConflict(_ resolution: CopyConflictResolution) {
+        guard var session = conflictSession else { return }
         copyConflictRequest = nil
-        guard resolution != .cancel else {
+
+        switch resolution {
+        case .cancel:
+            conflictSession = nil
+            return
+        case .overwrite:
+            if let idx = session.remainingConflictIndices.first {
+                session.approvedItems.append((session.allSources[idx], true))
+                session.remainingConflictIndices.removeFirst()
+            }
+        case .overwriteAll:
+            for idx in session.remainingConflictIndices {
+                session.approvedItems.append((session.allSources[idx], true))
+            }
+            session.remainingConflictIndices = []
+        case .skip:
+            if !session.remainingConflictIndices.isEmpty {
+                session.remainingConflictIndices.removeFirst()
+            }
+        case .skipAll:
+            session.remainingConflictIndices = []
+        }
+
+        conflictSession = session
+        showNextConflictOrExecute()
+    }
+
+    /// Copies items dropped from Finder or another tab into this folder. Reuses
+    /// the same conflict flow as paste.
+    func importItems(_ urls: [URL], maximumConcurrentCopies: Int) {
+        guard currentURL.isFileURL else { return }
+        let dest = currentURL.standardizedFileURL
+        let sources = urls.map(\.standardizedFileURL).filter { $0.deletingLastPathComponent() != dest }
+        guard !sources.isEmpty else { return }
+        beginConflictResolution(sources: sources, to: dest, operation: .copy(maximumConcurrentCopies: maximumConcurrentCopies))
+    }
+
+    private func beginConflictResolution(sources: [URL], to destinationDirectory: URL, operation: ConflictSession.Operation) {
+        var approved: [(source: URL, shouldOverwrite: Bool)] = []
+        var conflictIndices: [Int] = []
+
+        for (i, source) in sources.enumerated() {
+            let destination = destinationDirectory.appendingPathComponent(source.lastPathComponent)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                conflictIndices.append(i)
+            } else {
+                approved.append((source, false))
+            }
+        }
+
+        conflictSession = ConflictSession(
+            allSources: sources,
+            destinationDirectory: destinationDirectory,
+            operation: operation,
+            approvedItems: approved,
+            remainingConflictIndices: conflictIndices,
+            totalConflicts: conflictIndices.count
+        )
+
+        showNextConflictOrExecute()
+    }
+
+    private func showNextConflictOrExecute() {
+        guard let session = conflictSession else { return }
+
+        guard let firstRemainingIdx = session.remainingConflictIndices.first else {
+            copyConflictRequest = nil
+            executeConflictSession()
             return
         }
 
-        copyQueue.maximumConcurrentCopies = maximumConcurrentCopies
-        copyQueue.enqueue(request.sources, to: request.destinationDirectory, conflictResolution: resolution)
+        let conflictNumber = session.totalConflicts - session.remainingConflictIndices.count + 1
+        copyConflictRequest = CopyConflictRequest(
+            conflictingName: session.allSources[firstRemainingIdx].lastPathComponent,
+            conflictNumber: conflictNumber,
+            totalConflicts: session.totalConflicts
+        )
+    }
+
+    private func executeConflictSession() {
+        guard let session = conflictSession else { return }
+        conflictSession = nil
+        guard !session.approvedItems.isEmpty else { return }
+
+        switch session.operation {
+        case .copy(let maximumConcurrentCopies):
+            copyQueue.maximumConcurrentCopies = maximumConcurrentCopies
+            copyQueue.enqueue(session.approvedItems, to: session.destinationDirectory)
+
+        case .move(let shouldClearCut):
+            let approvedItems = session.approvedItems
+            let destinationDirectory = session.destinationDirectory
+            let allSources = session.allSources
+            Task {
+                do {
+                    let movedURLs = try await fileSystem.moveItems(approvedItems, to: destinationDirectory)
+                    if shouldClearCut {
+                        clearCutItems(containing: allSources)
+                    }
+                    await reload(selecting: movedURLs.first)
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    /// Reorders a pinned favorite so it lands ahead of `targetURL`. Built-in
+    /// favorites keep their fixed order; only user-pinned favorites reorder.
+    func moveFavorite(_ url: URL, before targetURL: URL) {
+        let source = url.standardizedFileURL
+        let target = targetURL.standardizedFileURL
+        guard source != target,
+              let fromIndex = pinnedFavoriteURLs.firstIndex(of: source),
+              let targetIndex = pinnedFavoriteURLs.firstIndex(of: target) else {
+            return
+        }
+
+        let moved = pinnedFavoriteURLs.remove(at: fromIndex)
+        let insertionIndex = pinnedFavoriteURLs.firstIndex(of: target) ?? targetIndex
+        pinnedFavoriteURLs.insert(moved, at: insertionIndex)
+        savePinnedFavorites()
+    }
+
+    func isPinnedFavorite(_ url: URL) -> Bool {
+        pinnedFavoriteURLs.contains(url.standardizedFileURL)
     }
 
     func showCopyQueue() {
-        isCopyQueueVisible = true
+        detailDestination = .copyQueue
     }
 
     func showCurrentFolder() {
-        isCopyQueueVisible = false
+        detailDestination = .files
+    }
+
+    func showAbout() {
+        presentAuxiliaryDetail(.about)
+    }
+
+    func showSettings() {
+        presentAuxiliaryDetail(.settings)
+    }
+
+    /// Returns from a transient About/Settings surface to whatever the user was
+    /// viewing before (their folder/tab or the copy queue).
+    func dismissAuxiliaryDetail() {
+        detailDestination = destinationBeforeAuxiliaryDetail
+    }
+
+    private func presentAuxiliaryDetail(_ destination: DetailDestination) {
+        if detailDestination != .about, detailDestination != .settings {
+            destinationBeforeAuxiliaryDetail = detailDestination
+        }
+
+        detailDestination = destination
     }
 
     func isCut(_ item: FileItem) -> Bool {
         cutItemURLs.contains(item.url.standardizedFileURL)
+    }
+
+    var canSelectAll: Bool { !displayedItems.isEmpty }
+
+    func selectAll() {
+        let ids = displayedItems.map(\.id)
+        selectedItemIDs = Set(ids)
+        selectionAnchorID = ids.first
     }
 
     func select(_ item: FileItem, mode: SelectionMode) {

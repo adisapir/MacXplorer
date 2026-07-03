@@ -15,9 +15,12 @@ struct FileItem: Identifiable, Hashable, Sendable {
     let isHidden: Bool
     let size: Int64?
     let modifiedAt: Date?
+    let createdAt: Date?
+    let dateTaken: Date?
+    let owner: String?
     let isNetworkLocation: Bool
 
-    init(
+    nonisolated init(
         url: URL,
         name: String,
         typeDescription: String,
@@ -30,6 +33,9 @@ struct FileItem: Identifiable, Hashable, Sendable {
         isHidden: Bool,
         size: Int64?,
         modifiedAt: Date?,
+        createdAt: Date? = nil,
+        dateTaken: Date? = nil,
+        owner: String? = nil,
         isNetworkLocation: Bool = false
     ) {
         self.url = url
@@ -44,12 +50,15 @@ struct FileItem: Identifiable, Hashable, Sendable {
         self.isHidden = isHidden
         self.size = size
         self.modifiedAt = modifiedAt
+        self.createdAt = createdAt
+        self.dateTaken = dateTaken
+        self.owner = owner
         self.isNetworkLocation = isNetworkLocation
     }
 }
 
 extension FileItem {
-    var opensInApp: Bool {
+    nonisolated var opensInApp: Bool {
         guard !isNetworkLocation else {
             return false
         }
@@ -112,4 +121,39 @@ extension FileItem {
     var sortModifiedAt: Date {
         modifiedAt ?? .distantPast
     }
+
+    var sortCreatedAt: Date {
+        createdAt ?? .distantPast
+    }
+
+    var sortDateTaken: Date {
+        dateTaken ?? .distantPast
+    }
+
+    var sortOwner: String {
+        owner ?? ""
+    }
+
+    var displayCreated: String {
+        createdAt.map(Self.columnDateFormatter.string(from:)) ?? ""
+    }
+
+    var displayModified: String {
+        modifiedAt.map(Self.columnDateFormatter.string(from:)) ?? ""
+    }
+
+    var displayDateTaken: String {
+        dateTaken.map(Self.columnDateFormatter.string(from:)) ?? ""
+    }
+
+    var displayOwner: String {
+        owner ?? ""
+    }
+
+    private static let columnDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
 }

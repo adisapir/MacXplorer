@@ -30,9 +30,14 @@ private struct ActiveBrowserView: View {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
-            if model.isCopyQueueVisible {
+            switch model.detailDestination {
+            case .copyQueue:
                 CopyQueueView(queue: model.copyQueue)
-            } else {
+            case .about:
+                AboutView()
+            case .settings:
+                SettingsSurface()
+            case .files:
                 VStack(spacing: 0) {
                     BrowserToolbar()
                     FileTableView(
@@ -41,6 +46,14 @@ private struct ActiveBrowserView: View {
                         itemsPendingTrash: $itemsPendingTrash
                     )
                     StatusBar()
+                }
+                .onKeyPress(.delete) {
+                    guard model.canGoBack else {
+                        return .ignored
+                    }
+
+                    model.goBack()
+                    return .handled
                 }
             }
         }
@@ -103,23 +116,35 @@ private struct ActiveBrowserView: View {
             manualFolderError = nil
         }
         .confirmationDialog(
-            "Items already exist at the destination",
+            copyConflictTitle,
             isPresented: Binding(
                 get: { model.copyConflictRequest != nil },
                 set: { if !$0 { model.copyConflictRequest = nil } }
             ),
             titleVisibility: .visible
         ) {
-            Button("Overwrite") {
-                model.resolveCopyConflict(.overwrite, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+            Button("Overwrite", role: .destructive) {
+                model.resolveCopyConflict(.overwrite)
+            }
+
+            if model.copyConflictRequest?.totalConflicts ?? 0 > 1 {
+                Button("Overwrite All", role: .destructive) {
+                    model.resolveCopyConflict(.overwriteAll)
+                }
             }
 
             Button("Skip") {
-                model.resolveCopyConflict(.skip, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+                model.resolveCopyConflict(.skip)
             }
 
-            Button("Cancel operation", role: .cancel) {
-                model.resolveCopyConflict(.cancel, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+            if model.copyConflictRequest?.totalConflicts ?? 0 > 1 {
+                Button("Skip All") {
+                    model.resolveCopyConflict(.skipAll)
+                }
+            }
+
+            Button("Cancel", role: .cancel) {
+                model.resolveCopyConflict(.cancel)
             }
         } message: {
             Text(copyConflictMessage)
@@ -179,17 +204,17 @@ private struct ActiveBrowserView: View {
         .environmentObject(model)
     }
 
+    private var copyConflictTitle: String {
+        guard let request = model.copyConflictRequest else { return "" }
+        return "\"\(request.conflictingName)\" already exists at the destination"
+    }
+
     private var copyConflictMessage: String {
-        guard let request = model.copyConflictRequest else {
-            return ""
+        guard let request = model.copyConflictRequest else { return "" }
+        if request.totalConflicts > 1 {
+            return "Conflict \(request.conflictNumber) of \(request.totalConflicts)"
         }
-
-        let visibleNames = request.conflictingNames.prefix(3).joined(separator: ", ")
-        if request.conflictingNames.count > 3 {
-            return "\(visibleNames), and \(request.conflictingNames.count - 3) more already exist."
-        }
-
-        return "\(visibleNames) already exist."
+        return "An item with this name already exists. Choose how to handle the conflict."
     }
 }
 
@@ -240,41 +265,59 @@ private struct QuickViewSheet: View {
 
 private struct BrowserTabStrip: View {
     @EnvironmentObject private var tabs: BrowserTabsViewModel
+    @EnvironmentObject private var settings: AppSettings
+
+    // Chrome-like sizing: tabs share the available width but never grow past a
+    // comfortable maximum, and shrink to fit as more tabs open.
+    private let maxTabWidth: CGFloat = 190
+    private let tabSpacing: CGFloat = 5
 
     var body: some View {
         GeometryReader { proxy in
             let horizontalPadding: CGFloat = 16
-            let addButtonWidth: CGFloat = 36
-            let tabSpacing: CGFloat = 2
+            let addButtonWidth: CGFloat = 30
             let availableWidth = max(
                 44,
                 proxy.size.width - horizontalPadding - addButtonWidth - tabSpacing * CGFloat(max(tabs.tabs.count - 1, 0))
             )
-            let tabWidth = availableWidth / CGFloat(max(tabs.tabs.count, 1))
+            let tabWidth = min(maxTabWidth, availableWidth / CGFloat(max(tabs.tabs.count, 1)))
 
             HStack(spacing: tabSpacing) {
                 ForEach(tabs.tabs) { tab in
                     BrowserTabButton(
                         model: tab.model,
                         isSelected: tab.id == tabs.selectedTabID,
-                        width: tabWidth
-                    ) {
-                        tabs.selectTab(tab.id)
+                        width: tabWidth,
+                        tabID: tab.id,
+                        onSelect: { tabs.selectTab(tab.id) },
+                        onReorder: { draggedID in tabs.moveTab(draggedID, before: tab.id) },
+                        onDropFiles: { urls in
+                            tab.model.importItems(urls, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+                        }
+                    )
+                    .contextMenu {
+                        Button("Duplicate Tab") {
+                            tabs.duplicateTab(tab.id)
+                        }
+                        .keyboardShortcut("d", modifiers: [.command, .shift])
+
+                        Divider()
+
+                        Button("Sort by Name") {
+                            tabs.sortTabsByName()
+                        }
+
+                        Button("Close Duplicate Tabs") {
+                            tabs.closeDuplicateTabs()
+                        }
                     }
                 }
 
-                Button {
+                AddTabButton(isEnabled: tabs.canAddTab) {
                     tabs.addTab()
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 28, height: 26)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .disabled(!tabs.canAddTab)
-                .foregroundStyle(tabs.canAddTab ? .primary : .tertiary)
-                .modernTooltip(tabs.canAddTab ? "Open a new tab (⌘T)" : "Maximum number of tabs reached")
+
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -285,7 +328,32 @@ private struct BrowserTabStrip: View {
                     .frame(height: 1)
             }
         }
-        .frame(height: 37)
+        .frame(height: 34)
+    }
+}
+
+private struct AddTabButton: View {
+    let isEnabled: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 26, height: 24)
+                .background(
+                    (isHovering && isEnabled) ? Color.primary.opacity(0.08) : .clear,
+                    in: RoundedRectangle(cornerRadius: 7)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .foregroundStyle(isEnabled ? .primary : .tertiary)
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .onHover { isHovering = $0 }
+        .modernTooltip(isEnabled ? "Open a new tab (⌘T)" : "Maximum number of tabs reached")
     }
 }
 
@@ -293,14 +361,23 @@ private struct BrowserTabButton: View {
     @ObservedObject var model: FileBrowserViewModel
     let isSelected: Bool
     let width: CGFloat
-    let action: () -> Void
+    let tabID: UUID
+    let onSelect: () -> Void
+    let onReorder: (UUID) -> Void
+    let onDropFiles: ([URL]) -> Void
+
+    @State private var isHovering = false
+    @State private var isDropTargeted = false
+    @State private var springLoadTask: Task<Void, Never>?
+
+    private let cornerRadius: CGFloat = 10
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 7) {
-                if width >= 54 {
+        Button(action: onSelect) {
+            HStack(spacing: 6) {
+                if width >= 62 {
                     Image(systemName: model.isBrowsingNetwork ? "network" : "folder.fill")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .symbolRenderingMode(.hierarchical)
                 }
 
@@ -310,46 +387,129 @@ private struct BrowserTabButton: View {
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, max(4, min(10, width / 12)))
-            .frame(width: width, height: 28, alignment: .leading)
-            .contentShape(RoundedRectangle(cornerRadius: 7))
+            .padding(.horizontal, max(7, min(11, width / 12)))
+            .frame(width: width, height: 26, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
         }
         .buttonStyle(.plain)
         .foregroundStyle(isSelected ? .primary : .secondary)
-        .background(
-            isSelected ? Color(nsColor: .controlBackgroundColor) : Color.clear,
-            in: RoundedRectangle(cornerRadius: 7)
-        )
+        .background(tabBackground, in: RoundedRectangle(cornerRadius: cornerRadius))
         .overlay {
-            RoundedRectangle(cornerRadius: 7)
-                .stroke(isSelected ? Color(nsColor: .separatorColor).opacity(0.7) : .clear, lineWidth: 1)
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .stroke(borderStyle, lineWidth: isDropTargeted ? 2 : 1)
+        }
+        .shadow(color: isSelected ? .black.opacity(0.12) : .clear, radius: 3, y: 1)
+        .animation(.easeOut(duration: 0.13), value: isHovering)
+        .animation(.easeOut(duration: 0.13), value: isSelected)
+        .animation(.easeOut(duration: 0.13), value: isDropTargeted)
+        .onHover { isHovering = $0 }
+        .draggable(tabID.uuidString)
+        .dropDestination(for: String.self) { ids, _ in
+            guard let identifier = ids.first, let uuid = UUID(uuidString: identifier) else {
+                return false
+            }
+
+            onReorder(uuid)
+            return true
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            cancelSpringLoad()
+            onDropFiles(urls)
+            return true
+        } isTargeted: { targeted in
+            isDropTargeted = targeted
+            if targeted {
+                scheduleSpringLoad()
+            } else {
+                cancelSpringLoad()
+            }
         }
         .modernTooltip(model.currentLocationText)
+    }
+
+    // Chrome-style spring loading: hovering a dragged file over a tab switches
+    // to it after a short delay so items can be dropped into that folder.
+    private func scheduleSpringLoad() {
+        springLoadTask?.cancel()
+        springLoadTask = Task {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else {
+                return
+            }
+
+            onSelect()
+        }
+    }
+
+    private func cancelSpringLoad() {
+        springLoadTask?.cancel()
+        springLoadTask = nil
+    }
+
+    private var borderStyle: AnyShapeStyle {
+        if isDropTargeted {
+            return AnyShapeStyle(Color.accentColor)
+        }
+
+        if isSelected {
+            return AnyShapeStyle(Color(nsColor: .separatorColor).opacity(0.7))
+        }
+
+        return AnyShapeStyle(Color.clear)
+    }
+
+    private var tabBackground: AnyShapeStyle {
+        if isSelected {
+            return AnyShapeStyle(Color(nsColor: .controlBackgroundColor))
+        }
+
+        if isHovering {
+            return AnyShapeStyle(Color.primary.opacity(0.09))
+        }
+
+        return AnyShapeStyle(Color.clear)
     }
 }
 
 private struct SidebarView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
-    private let copyQueueSelectionID = "macxplorer://copy-queue"
+    private let copyQueueSelectionID = "maxplorer://copy-queue"
+    private let settingsSelectionID = "maxplorer://settings"
+    private let aboutSelectionID = "maxplorer://about"
 
     var body: some View {
         List(selection: Binding(
-            get: { model.isCopyQueueVisible ? copyQueueSelectionID : model.currentURL.absoluteString },
+            get: {
+                switch model.detailDestination {
+                case .copyQueue: return copyQueueSelectionID
+                case .settings: return settingsSelectionID
+                case .about: return aboutSelectionID
+                case .files: return model.currentURL.absoluteString
+                }
+            },
             set: { selection in
                 guard let selection else {
                     return
                 }
 
-                if selection == copyQueueSelectionID {
+                switch selection {
+                case copyQueueSelectionID:
                     model.showCopyQueue()
-                } else if let url = URL(string: selection) {
-                    model.navigate(to: url)
+                case settingsSelectionID:
+                    model.showSettings()
+                case aboutSelectionID:
+                    model.showAbout()
+                default:
+                    if let url = URL(string: selection) {
+                        model.navigate(to: url)
+                    }
                 }
             }
         )) {
             Section(SidebarLocation.Group.favorites.rawValue) {
                 ForEach(model.sidebarLocations.filter { $0.group == .favorites }) { location in
                     Label(location.name, systemImage: location.systemImage)
+                        .sidebarHover()
                         .tag(location.url.absoluteString)
                         .contextMenu {
                             if location.canRemoveFromFavorites {
@@ -357,6 +517,10 @@ private struct SidebarView: View {
                                     model.removeFavorite(location.url)
                                 }
                             }
+                        }
+                        .draggable(location.url)
+                        .dropDestination(for: URL.self) { urls, _ in
+                            _ = handleFavoriteDrop(urls, before: location)
                         }
                 }
             }
@@ -367,6 +531,7 @@ private struct SidebarView: View {
             Section(SidebarLocation.Group.devices.rawValue) {
                 ForEach(model.sidebarLocations.filter { $0.group == .devices }) { location in
                     Label(location.name, systemImage: location.systemImage)
+                        .sidebarHover()
                         .tag(location.url.absoluteString)
                 }
             }
@@ -381,6 +546,7 @@ private struct SidebarView: View {
 
                 ForEach(model.sidebarLocations.filter { $0.group == .network }) { location in
                     Label(location.name, systemImage: location.systemImage)
+                        .sidebarHover()
                         .tag(location.url.absoluteString)
                 }
             }
@@ -397,9 +563,41 @@ private struct SidebarView: View {
                 }
                 .tag(copyQueueSelectionID)
             }
+
+            Section {
+                Divider()
+                    .listRowSeparator(.hidden)
+                    .padding(.vertical, 2)
+
+                Label("Settings", systemImage: "gearshape")
+                    .foregroundStyle(.blue)
+                    .sidebarHover()
+                    .tag(settingsSelectionID)
+
+                Label("About", systemImage: "info.circle")
+                    .foregroundStyle(.blue)
+                    .sidebarHover()
+                    .tag(aboutSelectionID)
+            }
         }
         .listStyle(.sidebar)
         .symbolRenderingMode(.hierarchical)
+    }
+
+    private func handleFavoriteDrop(_ urls: [URL], before location: SidebarLocation) -> Bool {
+        var didHandle = false
+
+        for url in urls {
+            if model.isPinnedFavorite(url) {
+                model.moveFavorite(url, before: location.url)
+            } else {
+                model.pinFavorite(url)
+            }
+
+            didHandle = true
+        }
+
+        return didHandle
     }
 }
 
@@ -426,10 +624,14 @@ private struct PulsingStatusDot: View {
 
 private struct BrowserToolbar: View {
     @EnvironmentObject private var model: FileBrowserViewModel
+    @EnvironmentObject private var tabs: BrowserTabsViewModel
+    @EnvironmentObject private var settings: AppSettings
     @FocusState private var pathFocused: Bool
+    @FocusState private var filterFocused: Bool
 
     var body: some View {
         VStack(spacing: 8) {
+            GlassEffectContainer(spacing: 10) {
             HStack(spacing: 10) {
                 ToolbarButtonGroup {
                     ToolbarIconButton(
@@ -482,7 +684,7 @@ private struct BrowserToolbar: View {
 
                     ToolbarIconButton(
                         systemName: "arrow.up.forward.square",
-                        help: "Reveal the selected item in Finder (⌘⇧R)"
+                        help: "Reveal the selected item in Finder (⌃⌘R)"
                     ) {
                         model.revealSelectedInFinder()
                     }
@@ -500,16 +702,39 @@ private struct BrowserToolbar: View {
                 ToolbarButtonGroup {
                     ToolbarToggleButton(
                         systemName: "eye.fill",
-                        help: model.showHiddenFiles ? "Hide hidden files (⌘⇧.)" : "Show hidden files (⌘⇧.)",
-                        isOn: $model.showHiddenFiles
+                        help: tabs.showHiddenFiles ? "Hide hidden files (⌘⇧.)" : "Show hidden files (⌘⇧.)",
+                        isOn: $tabs.showHiddenFiles
                     )
 
                     ToolbarToggleButton(
                         systemName: "a.square.fill",
-                        help: model.showAliases ? "Hide aliases (⌘⇧A)" : "Show aliases (⌘⇧A)",
-                        isOn: $model.showAliases,
+                        help: tabs.showAliases ? "Hide aliases (⌘⇧A)" : "Show aliases (⌘⇧A)",
+                        isOn: $tabs.showAliases,
                         iconSize: 22
                     )
+                }
+
+                ToolbarButtonGroup {
+                    Menu {
+                        Section("Show Columns") {
+                            ForEach(FileColumn.allCases) { column in
+                                Toggle(column.title, isOn: Binding(
+                                    get: { settings.visibleColumns.contains(column) },
+                                    set: { _ in settings.toggleColumn(column) }
+                                ))
+                                .disabled(column.isRequired)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 14, weight: .semibold))
+                            .frame(width: 26, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .modernTooltip("Choose which columns are shown")
                 }
 
                 Spacer(minLength: 12)
@@ -520,18 +745,21 @@ private struct BrowserToolbar: View {
                     TextField("Filter current folder", text: $model.filterText)
                         .textFieldStyle(.plain)
                         .frame(width: 220)
+                        .focused($filterFocused)
                 }
                 .font(.system(size: 13, weight: .medium))
-                .padding(.horizontal, 11)
-                .padding(.vertical, 7)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(.separator.opacity(0.6), lineWidth: 1)
-                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
                 .modernTooltip("Filter items shown in the current folder")
             }
             .symbolRenderingMode(.hierarchical)
+            }
+            .onChange(of: model.shouldFocusFilter) { _, should in
+                guard should else { return }
+                filterFocused = true
+                model.shouldFocusFilter = false
+            }
 
             HStack(spacing: 8) {
                 Image(systemName: "point.topleft.down.curvedto.point.bottomright.up")
@@ -554,14 +782,9 @@ private struct BrowserToolbar: View {
                 .modernTooltip("Copy the selected item path, or the current folder path if nothing is selected (⌘⌥C)")
             }
             .symbolRenderingMode(.hierarchical)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(.background)
-            .overlay {
-                RoundedRectangle(cornerRadius: 7)
-                    .stroke(.separator, lineWidth: 1)
-            }
-            .macOS26GlassPanel()
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
         }
         .padding(12)
         .background(.bar)
@@ -699,6 +922,61 @@ private struct CopyQueueRow: View {
     }()
 }
 
+private struct SettingsSurface: View {
+    @EnvironmentObject private var model: FileBrowserViewModel
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                VStack(spacing: 10) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 40, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(Color.accentColor)
+
+                    Text("Settings")
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+
+                    Text("Tune appearance, tabs, and copy behavior.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 24)
+
+                SettingsView()
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22))
+
+                Button {
+                    model.dismissAuxiliaryDetail()
+                } label: {
+                    Text("OK")
+                        .font(.headline)
+                        .frame(minWidth: 72)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.glassProminent)
+                .controlSize(.large)
+                .keyboardShortcut(.cancelAction)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 32)
+            .padding(.vertical, 28)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            LinearGradient(
+                colors: [Color.accentColor.opacity(0.12), Color.clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+        )
+    }
+}
+
 private struct ToolbarButtonGroup<Content: View>: View {
     @ViewBuilder var content: Content
 
@@ -706,12 +984,8 @@ private struct ToolbarButtonGroup<Content: View>: View {
         HStack(spacing: 4) {
             content
         }
-        .padding(3)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(.separator.opacity(0.55), lineWidth: 1)
-        }
+        .padding(4)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -931,13 +1205,47 @@ private extension View {
     func modernTooltip(_ text: String) -> some View {
         modifier(ModernTooltipModifier(text: text))
     }
+
+    func sidebarHover() -> some View {
+        modifier(SidebarHoverModifier())
+    }
+}
+
+/// A subtle glass hover highlight for sidebar rows.
+private struct SidebarHoverModifier: ViewModifier {
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 3)
+            .padding(.horizontal, 6)
+            .background {
+                if isHovering {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(.thinMaterial)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(Color.primary.opacity(0.05))
+                        }
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+            .onHover { isHovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovering)
+    }
 }
 
 private struct FileTableView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
+    @EnvironmentObject private var settings: AppSettings
     @Binding var renameItem: FileItem?
     @Binding var renameText: String
     @Binding var itemsPendingTrash: [FileItem]
+    @State private var isDropTargeted = false
+    @State private var folderDropTargetID: FileItem.ID?
+
+    private var columns: Set<FileColumn> { settings.visibleColumns }
 
     var body: some View {
         ZStack {
@@ -946,45 +1254,63 @@ private struct FileTableView: View {
                 set: { model.selectedItemIDs = $0 }
             ), sortOrder: $model.sortOrder) {
                 TableColumn("Name", value: \.name) { item in
-                    HStack(spacing: 8) {
-                        FileItemIcon(item: item)
+                    nameCell(for: item)
+                }
+                .width(min: 220, ideal: 320)
 
-                        Text(item.name)
-                            .lineLimit(1)
-
-                        Spacer(minLength: 0)
+                if columns.contains(.kind) {
+                    TableColumn("Kind", value: \.displayKind) { item in
+                        columnText(item.displayKind, for: item)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .opacity(model.isCut(item) ? 0.45 : 1)
-                    .overlay { rowClickTarget(for: item) }
-                    .draggable(item.url)
+                    .width(min: 120, ideal: 170)
                 }
-                .width(min: 260, ideal: 360)
 
-                TableColumn("Kind", value: \.displayKind) { item in
-                    Text(item.displayKind)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .overlay { rowClickTarget(for: item) }
+                if columns.contains(.size) {
+                    TableColumn("Size", value: \.sortSize) { item in
+                        columnText(item.displaySize, for: item, monospacedDigit: true)
+                    }
+                    .width(min: 80, ideal: 110)
                 }
-                .width(min: 120, ideal: 180)
 
-                TableColumn("Size", value: \.sortSize) { item in
-                    Text(item.displaySize)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .overlay { rowClickTarget(for: item) }
+                if columns.contains(.dateModified) {
+                    TableColumn("Date Modified", value: \.sortModifiedAt) { item in
+                        columnText(item.displayModified, for: item)
+                    }
+                    .width(min: 150, ideal: 180)
                 }
-                .width(min: 80, ideal: 110)
 
-                TableColumn("Modified", value: \.sortModifiedAt) { item in
-                    Text(item.modifiedAt.map(Self.dateFormatter.string(from:)) ?? "")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .overlay { rowClickTarget(for: item) }
+                if columns.contains(.dateCreated) {
+                    TableColumn("Date Created", value: \.sortCreatedAt) { item in
+                        columnText(item.displayCreated, for: item)
+                    }
+                    .width(min: 150, ideal: 180)
                 }
-                .width(min: 150, ideal: 180)
+
+                if columns.contains(.dateTaken) {
+                    TableColumn("Date Taken", value: \.sortDateTaken) { item in
+                        columnText(item.displayDateTaken, for: item)
+                    }
+                    .width(min: 150, ideal: 180)
+                }
+
+                if columns.contains(.owner) {
+                    TableColumn("Owner", value: \.sortOwner) { item in
+                        columnText(item.displayOwner, for: item)
+                    }
+                    .width(min: 100, ideal: 140)
+                }
+            }
+            .dropDestination(for: URL.self) { urls, _ in
+                model.importItems(urls, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+                return true
+            } isTargeted: { isDropTargeted = $0 }
+            .overlay {
+                if isDropTargeted {
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                        .padding(2)
+                        .allowsHitTesting(false)
+                }
             }
             .contextMenu(forSelectionType: FileItem.ID.self) { selection in
                 Button("Open") {
@@ -1181,6 +1507,42 @@ private struct FileTableView: View {
         return "This folder is empty or unavailable."
     }
 
+    @ViewBuilder
+    private func nameCell(for item: FileItem) -> some View {
+        let isFolderTarget = folderDropTargetID == item.id
+        HStack(spacing: 8) {
+            FileItemIcon(item: item)
+            Text(item.name).lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(model.isCut(item) ? 0.45 : 1)
+        .background(
+            isFolderTarget ? Color.accentColor.opacity(0.18) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 4)
+        )
+        .overlay { rowClickTarget(for: item) }
+        .draggable(item.url)
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let dest = item.navigationURL else { return false }
+            model.moveItems(urlsExpandingSelection(urls), to: dest)
+            return true
+        } isTargeted: { targeted in
+            folderDropTargetID = (targeted && item.navigationURL != nil) ? item.id : nil
+        }
+    }
+
+    /// If the dragged URL is one of the currently selected items, return all
+    /// selected URLs so a multi-selection drag moves everything at once.
+    private func urlsExpandingSelection(_ droppedURLs: [URL]) -> [URL] {
+        let droppedStd = Set(droppedURLs.map(\.standardizedFileURL))
+        let selectedURLs = model.displayedItems
+            .filter { model.selectedItemIDs.contains($0.id) }
+            .map(\.url)
+        let selectedStd = Set(selectedURLs.map(\.standardizedFileURL))
+        return droppedStd.isDisjoint(with: selectedStd) ? droppedURLs : selectedURLs
+    }
+
     private func rowClickTarget(for item: FileItem) -> some View {
         TableCellClickTarget { mode in
             model.select(item, mode: mode)
@@ -1190,12 +1552,14 @@ private struct FileTableView: View {
         }
     }
 
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter
-    }()
+    @ViewBuilder
+    private func columnText(_ text: String, for item: FileItem, monospacedDigit: Bool = false) -> some View {
+        Text(text)
+            .foregroundStyle(.secondary)
+            .font(monospacedDigit ? .body.monospacedDigit() : .body)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay { rowClickTarget(for: item) }
+    }
 }
 
 private struct StatusBar: View {
@@ -1484,13 +1848,3 @@ private struct ManualFolderComboBox: NSViewRepresentable {
     }
 }
 
-private extension View {
-    @ViewBuilder
-    func macOS26GlassPanel() -> some View {
-        if #available(macOS 26.0, *) {
-            self.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 7))
-        } else {
-            self
-        }
-    }
-}

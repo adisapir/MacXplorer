@@ -1,17 +1,38 @@
 import Foundation
+import ImageIO
+
+/// Controls whether the (potentially slow) per-file metadata is fetched during
+/// a listing. Owner resolution and image capture-date reads are only worth
+/// paying for when their columns are visible, so they default to off.
+struct DirectoryListingOptions: Equatable, Sendable {
+    var includeOwner: Bool
+    var includeDateTaken: Bool
+
+    init(includeOwner: Bool = false, includeDateTaken: Bool = false) {
+        self.includeOwner = includeOwner
+        self.includeDateTaken = includeDateTaken
+    }
+}
 
 protocol FileSystemService: Sendable {
-    func listDirectory(at url: URL, showHiddenFiles: Bool) async throws -> [FileItem]
+    func listDirectory(at url: URL, showHiddenFiles: Bool, options: DirectoryListingOptions) async throws -> [FileItem]
     func createFolder(named name: String, in directory: URL) async throws -> URL
     func renameItem(at url: URL, to newName: String) async throws -> URL
-    func moveItems(_ urls: [URL], to directory: URL) async throws -> [URL]
+    func moveItems(_ resolvedItems: [(source: URL, shouldOverwrite: Bool)], to directory: URL) async throws -> [URL]
     func moveToTrash(_ url: URL) async throws
     func quickViewContent(for url: URL, maximumBytes: Int) async throws -> QuickViewContent
+}
+
+extension FileSystemService {
+    func moveItems(_ urls: [URL], to directory: URL) async throws -> [URL] {
+        try await moveItems(urls.map { ($0, false) }, to: directory)
+    }
 }
 
 struct LocalFileSystemService: FileSystemService {
     private let keys: [URLResourceKey] = [
         .contentModificationDateKey,
+        .creationDateKey,
         .fileSizeKey,
         .isAliasFileKey,
         .isDirectoryKey,
@@ -20,46 +41,51 @@ struct LocalFileSystemService: FileSystemService {
         .localizedTypeDescriptionKey
     ]
 
-    func listDirectory(at url: URL, showHiddenFiles: Bool) async throws -> [FileItem] {
+    func listDirectory(at url: URL, showHiddenFiles: Bool, options: DirectoryListingOptions) async throws -> [FileItem] {
         try await Task.detached(priority: .userInitiated) {
-            let options: FileManager.DirectoryEnumerationOptions = showHiddenFiles ? [] : [.skipsHiddenFiles]
+            let enumerationOptions: FileManager.DirectoryEnumerationOptions = showHiddenFiles ? [] : [.skipsHiddenFiles]
             let urls = try FileManager.default.contentsOfDirectory(
                 at: url,
                 includingPropertiesForKeys: keys,
-                options: options
+                options: enumerationOptions
             )
 
-            let items = try urls.map { itemURL in
-                let values = try itemURL.resourceValues(forKeys: Set(keys))
-                let isDirectory = values.isDirectory ?? false
-                let aliasTargetURL = values.isAliasFile == true ? Self.aliasTargetURL(for: itemURL) : nil
-                let aliasTargetValues = aliasTargetURL.flatMap(Self.fileTypeValues)
-                let isAliasTargetDirectory = aliasTargetValues?.isDirectory ?? false
-                let isAliasTargetPackage = aliasTargetValues?.isPackage ?? false
+            // Build items off the main actor with bounded concurrency. FileItem
+            // construction is nonisolated, so no per-file hop to the main actor,
+            // and at most `maxConcurrency` file-metadata reads run at once to
+            // avoid thread explosion on large folders.
+            let resourceKeys = keys
+            let maxConcurrency = 6
+            var items: [FileItem] = []
+            items.reserveCapacity(urls.count)
 
-                return FileItem(
-                    url: itemURL,
-                    name: itemURL.lastPathComponent,
-                    typeDescription: values.localizedTypeDescription ?? "",
-                    isDirectory: isDirectory,
-                    isPackage: values.isPackage ?? false,
-                    isAlias: values.isAliasFile ?? false,
-                    aliasTargetURL: aliasTargetURL,
-                    isAliasTargetDirectory: isAliasTargetDirectory,
-                    isAliasTargetPackage: isAliasTargetPackage,
-                    isHidden: values.isHidden ?? false,
-                    size: values.fileSize.map(Int64.init),
-                    modifiedAt: values.contentModificationDate
-                )
-            }
-
-            return items.sorted { lhs, rhs in
-                if lhs.opensInApp != rhs.opensInApp {
-                    return lhs.opensInApp && !rhs.opensInApp
+            try await withThrowingTaskGroup(of: FileItem.self) { group in
+                var nextIndex = 0
+                let primeCount = min(maxConcurrency, urls.count)
+                while nextIndex < primeCount {
+                    let itemURL = urls[nextIndex]
+                    group.addTask { try Self.makeFileItem(for: itemURL, resourceKeys: resourceKeys, options: options) }
+                    nextIndex += 1
                 }
 
-                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+                while let item = try await group.next() {
+                    items.append(item)
+                    if nextIndex < urls.count {
+                        let itemURL = urls[nextIndex]
+                        group.addTask { try Self.makeFileItem(for: itemURL, resourceKeys: resourceKeys, options: options) }
+                        nextIndex += 1
+                    }
+                }
             }
+
+            let itemsWithOpensInApp = items.map { ($0, $0.opensInApp) }
+            let sortedItems = itemsWithOpensInApp.sorted { lhs, rhs in
+                if lhs.1 != rhs.1 {
+                    return lhs.1 && !rhs.1
+                }
+                return lhs.0.name.localizedStandardCompare(rhs.0.name) == .orderedAscending
+            }
+            return sortedItems.map { $0.0 }
         }.value
     }
 
@@ -92,12 +118,12 @@ struct LocalFileSystemService: FileSystemService {
         }.value
     }
 
-    func moveItems(_ urls: [URL], to directory: URL) async throws -> [URL] {
+    func moveItems(_ resolvedItems: [(source: URL, shouldOverwrite: Bool)], to directory: URL) async throws -> [URL] {
         try await Task.detached(priority: .userInitiated) {
             let destinationDirectory = directory.standardizedFileURL
             var moves: [(source: URL, destination: URL)] = []
 
-            for url in urls {
+            for (url, shouldOverwrite) in resolvedItems {
                 let source = url.standardizedFileURL
                 let destination = destinationDirectory.appendingPathComponent(source.lastPathComponent)
 
@@ -105,8 +131,13 @@ struct LocalFileSystemService: FileSystemService {
                     continue
                 }
 
-                guard !FileManager.default.fileExists(atPath: destination.path) else {
+                let destinationExists = FileManager.default.fileExists(atPath: destination.path)
+                guard !destinationExists || shouldOverwrite else {
                     throw FileSystemError.itemAlreadyExists(destination.lastPathComponent)
+                }
+
+                if destinationExists {
+                    try FileManager.default.removeItem(at: destination)
                 }
 
                 moves.append((source, destination))
@@ -158,15 +189,106 @@ struct LocalFileSystemService: FileSystemService {
         }.value
     }
 
-    private static func aliasTargetURL(for url: URL) -> URL? {
+    /// Fully off-main builder for a single directory entry.
+    nonisolated private static func makeFileItem(for itemURL: URL, resourceKeys: [URLResourceKey], options: DirectoryListingOptions) throws -> FileItem {
+        let values = try itemURL.resourceValues(forKeys: Set(resourceKeys))
+        let isDirectory = values.isDirectory ?? false
+
+        var aliasTargetURL: URL?
+        if values.isAliasFile == true {
+            aliasTargetURL = Self.aliasTargetURL(for: itemURL)
+        }
+
+        let aliasTargetValues = aliasTargetURL.flatMap(Self.fileTypeValues)
+        // Owner resolution (uid → name via Directory Services) is slow, so only
+        // pay for it when the Owner column is shown.
+        let owner = options.includeOwner
+            ? (try? FileManager.default.attributesOfItem(atPath: itemURL.path))?[.ownerAccountName] as? String
+            : nil
+        let dateTaken = options.includeDateTaken ? Self.captureDate(for: itemURL) : nil
+
+        return FileItem(
+            url: itemURL,
+            name: itemURL.lastPathComponent,
+            typeDescription: values.localizedTypeDescription ?? "",
+            isDirectory: isDirectory,
+            isPackage: values.isPackage ?? false,
+            isAlias: values.isAliasFile ?? false,
+            aliasTargetURL: aliasTargetURL,
+            isAliasTargetDirectory: aliasTargetValues?.isDirectory ?? false,
+            isAliasTargetPackage: aliasTargetValues?.isPackage ?? false,
+            isHidden: values.isHidden ?? false,
+            size: values.fileSize.map(Int64.init),
+            modifiedAt: values.contentModificationDate,
+            createdAt: values.creationDate,
+            dateTaken: dateTaken,
+            owner: owner
+        )
+    }
+
+    nonisolated private static func aliasTargetURL(for url: URL) -> URL? {
         try? URL(resolvingAliasFileAt: url, options: [.withoutUI]).standardizedFileURL
     }
 
-    private static func fileTypeValues(for url: URL) -> URLResourceValues? {
+    nonisolated private static func fileTypeValues(for url: URL) -> URLResourceValues? {
         try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
     }
 
-    private static func displayableText(from data: Data) -> String {
+    nonisolated private static let captureDateExtensions: Set<String> = [
+        "jpg", "jpeg", "heic", "heif", "tiff", "tif", "png", "gif",
+        "dng", "cr2", "cr3", "nef", "arw", "raf", "rw2", "orf"
+    ]
+
+    /// Best-effort "Date Taken" for image files, read from EXIF/TIFF metadata
+    /// without decoding the full image. Returns nil for non-image files.
+    nonisolated private static func captureDate(for url: URL) -> Date? {
+        guard captureDateExtensions.contains(url.pathExtension.lowercased()) else {
+            return nil
+        }
+
+        guard
+            let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        else {
+            return nil
+        }
+
+        if let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any],
+           let raw = (exif[kCGImagePropertyExifDateTimeOriginal] as? String)
+               ?? (exif[kCGImagePropertyExifDateTimeDigitized] as? String),
+           let date = parseExifDate(raw) {
+            return date
+        }
+
+        if let tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any],
+           let raw = tiff[kCGImagePropertyTIFFDateTime] as? String,
+           let date = parseExifDate(raw) {
+            return date
+        }
+
+        return nil
+    }
+
+    /// Parses the EXIF `yyyy:MM:dd HH:mm:ss` format without a shared
+    /// (non-thread-safe) DateFormatter, since listing runs concurrently.
+    nonisolated private static func parseExifDate(_ string: String) -> Date? {
+        let components = string.split { $0 == ":" || $0 == " " }.compactMap { Int($0) }
+        guard components.count >= 6 else {
+            return nil
+        }
+
+        var dateComponents = DateComponents()
+        dateComponents.year = components[0]
+        dateComponents.month = components[1]
+        dateComponents.day = components[2]
+        dateComponents.hour = components[3]
+        dateComponents.minute = components[4]
+        dateComponents.second = components[5]
+
+        return Calendar.current.date(from: dateComponents)
+    }
+
+    nonisolated private static func displayableText(from data: Data) -> String {
         if let text = String(data: data, encoding: .utf8), !containsControlCharacters(in: text) {
             return text
         }
@@ -185,7 +307,7 @@ struct LocalFileSystemService: FileSystemService {
         return String(String.UnicodeScalarView(scalars))
     }
 
-    private static func containsControlCharacters(in text: String) -> Bool {
+    nonisolated private static func containsControlCharacters(in text: String) -> Bool {
         text.unicodeScalars.contains { scalar in
             scalar.value < 32 && scalar != "\n" && scalar != "\r" && scalar != "\t"
         }
@@ -209,7 +331,7 @@ enum FileSystemError: LocalizedError {
     }
 }
 
-private func uniqueURL(forFolderNamed name: String, in directory: URL) throws -> URL {
+nonisolated private func uniqueURL(forFolderNamed name: String, in directory: URL) throws -> URL {
     var candidate = directory.appendingPathComponent(name)
     var suffix = 2
 
@@ -220,3 +342,4 @@ private func uniqueURL(forFolderNamed name: String, in directory: URL) throws ->
 
     return candidate
 }
+
