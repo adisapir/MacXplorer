@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject private var tabs: BrowserTabsViewModel
@@ -1351,11 +1352,13 @@ private struct FileTableView: View {
                     model.selectedItemIDs = selection
                     model.openSelected()
                 }
+                .keyboardShortcut("o", modifiers: .command)
 
                 Button("Quick View") {
                     model.selectedItemIDs = selection
                     model.quickViewSelectedItem()
                 }
+                .keyboardShortcut(.space, modifiers: [])
                 .disabled(!canQuickView(selection: selection))
 
                 Menu("Open With") {
@@ -1379,22 +1382,26 @@ private struct FileTableView: View {
                     model.selectedItemIDs = selection
                     model.cutSelectedItems()
                 }
+                .keyboardShortcut("x", modifiers: .command)
                 .disabled(!canCut(selection: selection))
 
                 Button("Copy") {
                     model.selectedItemIDs = selection
                     model.copySelectedItems()
                 }
+                .keyboardShortcut("c", modifiers: .command)
                 .disabled(!canCut(selection: selection))
 
                 Button("Rename") {
                     startRename(selection: selection)
                 }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(!canEdit(selection: selection))
 
                 Button("Move to Trash", role: .destructive) {
                     startTrash(selection: selection)
                 }
+                .keyboardShortcut(.delete, modifiers: .command)
                 .disabled(!canTrash(selection: selection))
 
                 Divider()
@@ -1410,16 +1417,19 @@ private struct FileTableView: View {
                     model.selectedItemIDs = selection
                     model.copySelectedPath()
                 }
+                .keyboardShortcut("c", modifiers: [.command, .option])
 
                 Button("Open in Terminal") {
                     model.selectedItemIDs = selection
                     model.openSelectedInTerminal()
                 }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
 
                 Button("Reveal in Finder") {
                     model.selectedItemIDs = selection
                     model.revealSelectedInFinder()
                 }
+                .keyboardShortcut("r", modifiers: [.command, .control])
             } primaryAction: { selection in
                 model.selectedItemIDs = selection
                 model.openSelected()
@@ -1583,6 +1593,9 @@ private struct FileTableView: View {
         } onOpen: {
             model.selectedItemIDs = [item.id]
             model.openSelected()
+        } onLongPress: {
+            guard !item.isNetworkLocation else { return }
+            startRename(selection: [item.id])
         }
     }
 
@@ -1626,23 +1639,29 @@ private struct StatusBar: View {
 private struct TableCellClickTarget: NSViewRepresentable {
     let onSelect: (SelectionMode) -> Void
     let onOpen: () -> Void
+    let onLongPress: () -> Void
 
     func makeNSView(context: Context) -> TableCellClickTargetNSView {
         let view = TableCellClickTargetNSView()
         view.onSelect = onSelect
         view.onOpen = onOpen
+        view.onLongPress = onLongPress
         return view
     }
 
     func updateNSView(_ nsView: TableCellClickTargetNSView, context: Context) {
         nsView.onSelect = onSelect
         nsView.onOpen = onOpen
+        nsView.onLongPress = onLongPress
     }
 }
 
 private final class TableCellClickTargetNSView: NSView {
     var onSelect: (SelectionMode) -> Void = { _ in }
     var onOpen: () -> Void = {}
+    var onLongPress: () -> Void = {}
+
+    private var longPressTimer: Timer?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -1656,8 +1675,34 @@ private final class TableCellClickTargetNSView: NSView {
         }
 
         if event.clickCount >= 2 {
+            cancelLongPress()
             onOpen()
+        } else if event.modifierFlags.intersection([.shift, .command]).isEmpty {
+            scheduleLongPress()
         }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        cancelLongPress()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        cancelLongPress()
+    }
+
+    deinit { longPressTimer?.invalidate() }
+
+    private func scheduleLongPress() {
+        longPressTimer?.invalidate()
+        longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
+            self?.longPressTimer = nil
+            self?.onLongPress()
+        }
+    }
+
+    private func cancelLongPress() {
+        longPressTimer?.invalidate()
+        longPressTimer = nil
     }
 }
 
