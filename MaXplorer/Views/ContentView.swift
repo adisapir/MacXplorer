@@ -1293,8 +1293,31 @@ private final class TooltipWindowPresenter {
 
     private var panel: NSPanel?
     private weak var currentAnchor: NSView?
+    // Set when a right-click dismisses the tooltip. Blocks re-presentation
+    // (SwiftUI's isPresented is still true, so updateNSView would otherwise call
+    // show() again right on top of the context menu) until the pointer leaves the
+    // anchor and a fresh hover begins.
+    private var isSuppressed = false
+
+    private init() {
+        // A right-click opens a context menu; dismiss any visible tooltip first
+        // so the two don't overlap. The panel ignores mouse events, so we watch
+        // the event stream globally rather than hit-testing the panel itself.
+        NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+            self?.dismiss()
+            return event
+        }
+    }
+
+    /// Force-hides the current tooltip and suppresses re-presentation.
+    func dismiss() {
+        panel?.orderOut(nil)
+        currentAnchor = nil
+        isSuppressed = true
+    }
 
     func show(text: String, anchor: NSView, colorScheme: ColorScheme, usesCursorPosition: Bool = false) {
+        guard !isSuppressed else { return }
         currentAnchor = anchor
 
         let rootView = TooltipBubble(text: text)
@@ -1331,6 +1354,9 @@ private final class TooltipWindowPresenter {
     }
 
     func hide(anchor: NSView) {
+        // A hover-exit lifts the right-click suppression so later hovers work.
+        isSuppressed = false
+
         guard currentAnchor === anchor else {
             return
         }
@@ -1800,10 +1826,19 @@ private struct StatusBar: View {
 
             Spacer()
 
-            Text(model.currentLocationText)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            if let stats = model.volumeStats {
+                let freePercent = Int((Double(stats.free) / Double(stats.total) * 100).rounded())
+                HStack(spacing: 12) {
+                    Label(
+                        "Used: \(ByteCountFormatter.string(fromByteCount: Int64(stats.used), countStyle: .file))",
+                        systemImage: "internaldrive"
+                    )
+                    Text("Free: \(ByteCountFormatter.string(fromByteCount: Int64(stats.free), countStyle: .file)) (\(freePercent)%)")
+                        .foregroundStyle(freePercent < 10 ? .red : .secondary)
+                }
                 .foregroundStyle(.secondary)
+                .monospacedDigit()
+            }
         }
         .font(.footnote)
         .padding(.horizontal, 12)

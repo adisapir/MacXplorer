@@ -99,7 +99,10 @@ nonisolated enum SpaceScanner {
     ) throws -> SpaceNode {
         try Task.checkCancellation()
         let fm = FileManager.default
-        let resKeys: Set<URLResourceKey> = [.fileSizeKey, .isDirectoryKey, .isPackageKey]
+        let resKeys: Set<URLResourceKey> = [
+            .fileSizeKey, .isDirectoryKey, .isPackageKey,
+            .isSymbolicLinkKey, .isAliasFileKey
+        ]
         var children: [SpaceNode] = []
         var total: UInt64 = 0
 
@@ -112,6 +115,14 @@ nonisolated enum SpaceScanner {
         for childURL in contents {
             try Task.checkCancellation()
             let res = try? childURL.resourceValues(forKeys: resKeys)
+
+            // Skip symlinks and Finder aliases so only physical items under the
+            // selected path are measured — avoids double-counting and following
+            // links out of the scanned subtree.
+            if res?.isSymbolicLink == true || res?.isAliasFile == true {
+                continue
+            }
+
             let isDir = res?.isDirectory ?? false
             let isPkg = res?.isPackage ?? false
 
