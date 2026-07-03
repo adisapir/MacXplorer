@@ -512,6 +512,8 @@ private struct BrowserTabButton: View {
 
 private struct SidebarView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
+    @AppStorage("sidebar.favoritesExpanded") private var favoritesExpanded = true
+    @AppStorage("sidebar.networkExpanded") private var networkExpanded = true
     private let copyQueueSelectionID = "maxplorer://copy-queue"
     private let settingsSelectionID = "maxplorer://settings"
     private let aboutSelectionID = "maxplorer://about"
@@ -545,7 +547,7 @@ private struct SidebarView: View {
                 }
             }
         )) {
-            Section(SidebarLocation.Group.favorites.rawValue) {
+            Section(isExpanded: $favoritesExpanded) {
                 ForEach(model.sidebarLocations.filter { $0.group == .favorites }) { location in
                     Label(location.name, systemImage: location.systemImage)
                         .sidebarHover()
@@ -562,6 +564,8 @@ private struct SidebarView: View {
                             _ = handleFavoriteDrop(urls, before: location)
                         }
                 }
+            } header: {
+                Text(SidebarLocation.Group.favorites.rawValue)
             }
             .dropDestination(for: URL.self) { urls, _ in
                 _ = model.pinDroppedFavorites(urls)
@@ -575,7 +579,7 @@ private struct SidebarView: View {
                 }
             }
 
-            Section(SidebarLocation.Group.network.rawValue) {
+            Section(isExpanded: $networkExpanded) {
                 Button {
                     model.showConnectToServer()
                 } label: {
@@ -588,6 +592,8 @@ private struct SidebarView: View {
                         .sidebarHover()
                         .tag(location.url.absoluteString)
                 }
+            } header: {
+                Text(SidebarLocation.Group.network.rawValue)
             }
 
             Section("Copy Queue") {

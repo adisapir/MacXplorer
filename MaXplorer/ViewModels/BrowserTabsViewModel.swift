@@ -41,7 +41,7 @@ final class BrowserTabsViewModel: ObservableObject {
 
     private func observeActiveModel() {
         activeModelObservation = activeModel.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
+            DispatchQueue.main.async { self?.objectWillChange.send() }
         }
     }
 
