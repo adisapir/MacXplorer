@@ -430,20 +430,39 @@ private struct BrowserTabButton: View {
             onReorder(uuid)
             return true
         }
-        .dropDestination(for: URL.self) { urls, _ in
+        // dropDestination(for: URL.self) only matches SwiftUI Transferable-encoded
+        // drags. NSTableView puts files on the pasteboard using AppKit conventions
+        // (public.file-url / NSFilenamesPboardType). onDrop registers as a full
+        // NSDraggingDestination and accepts those types correctly.
+        .onDrop(of: [.fileURL, .url], isTargeted: $isDropTargeted) { providers in
             cancelSpringLoad()
-            onSelect()
-            onDropFiles(urls)
-            return true
-        } isTargeted: { targeted in
-            isDropTargeted = targeted
-            if targeted {
-                scheduleSpringLoad()
-            } else {
-                cancelSpringLoad()
+            Task { @MainActor in
+                let urls = await loadDroppedURLs(from: providers)
+                guard !urls.isEmpty else { return }
+                onSelect()
+                onDropFiles(urls)
             }
+            return !providers.isEmpty
+        }
+        .onChange(of: isDropTargeted) { _, targeted in
+            if targeted { scheduleSpringLoad() } else { cancelSpringLoad() }
         }
         .modernTooltip(model.currentLocationText)
+    }
+
+    /// Loads file URLs from the NSItemProviders supplied by the drop session.
+    private func loadDroppedURLs(from providers: [NSItemProvider]) async -> [URL] {
+        var result: [URL] = []
+        for provider in providers {
+            guard provider.canLoadObject(ofClass: NSURL.self) else { continue }
+            let url: URL? = await withCheckedContinuation { cont in
+                _ = provider.loadObject(ofClass: NSURL.self) { object, _ in
+                    cont.resume(returning: (object as? NSURL) as URL?)
+                }
+            }
+            if let url { result.append(url) }
+        }
+        return result
     }
 
     // Chrome-style spring loading: hovering a dragged file over a tab switches
@@ -1651,45 +1670,17 @@ private struct FileItemIcon: View {
                 Image(systemName: "server.rack")
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.mint)
-            } else if item.isAlias && item.opensInApp {
-                FolderAliasIcon()
-            } else if item.opensInApp {
-                Image(systemName: "folder.fill")
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.blue)
-            } else if item.isPackage {
-                Image(systemName: "shippingbox.fill")
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.orange)
+                    .font(.system(size: 15, weight: .semibold))
             } else {
-                Image(systemName: "doc.richtext.fill")
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.secondary)
+                // NSWorkspace returns the exact same icon Finder shows:
+                // correct type-specific icons for documents, apps, aliases (with
+                // arrow badge), packages, and all folder variants.
+                Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
+                    .resizable()
+                    .interpolation(.high)
             }
         }
-        .font(.system(size: 17, weight: .semibold))
-        .frame(width: 22, height: 18)
-    }
-}
-
-private struct FolderAliasIcon: View {
-    var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Image(systemName: "folder.fill")
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.blue)
-
-            Text("A")
-                .font(.system(size: 8, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
-                .frame(width: 12, height: 12)
-                .background(.indigo, in: Circle())
-                .overlay {
-                    Circle()
-                        .stroke(.background, lineWidth: 1.3)
-                }
-                .offset(x: 4, y: 3)
-        }
+        .frame(width: 20, height: 20)
     }
 }
 
