@@ -1,4 +1,4 @@
-# Space Analyzer feature
+# Disk Storage Analyzer feature
 
 ## Design Specs
 

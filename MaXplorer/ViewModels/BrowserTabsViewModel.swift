@@ -164,6 +164,33 @@ final class BrowserTabsViewModel: ObservableObject {
         }
     }
 
+    // MARK: – Space Analyzer
+
+    @Published private(set) var spaceAnalyzerTabID: UUID?
+    let spaceAnalyzerViewModel = SpaceAnalyzerViewModel()
+
+    var isSpaceAnalyzerActive: Bool { selectedTabID == spaceAnalyzerTabID }
+
+    func openSpaceAnalyzer(url: URL? = nil) {
+        if let existingID = spaceAnalyzerTabID {
+            selectedTabID = existingID
+            if let url { spaceAnalyzerViewModel.startScan(url: url) }
+            return
+        }
+        let tab = Self.makeTab()
+        tabs.insert(tab, at: 0)
+        selectedTabID = tab.id
+        spaceAnalyzerTabID = tab.id
+        if let url { spaceAnalyzerViewModel.startScan(url: url) }
+    }
+
+    func closeSpaceAnalyzer() {
+        guard let id = spaceAnalyzerTabID else { return }
+        spaceAnalyzerTabID = nil
+        spaceAnalyzerViewModel.cancelScan()
+        closeTab(id)
+    }
+
     func selectNextTab() {
         selectTab(offset: 1)
     }
@@ -184,7 +211,7 @@ final class BrowserTabsViewModel: ObservableObject {
         selectedTabID = tabs[nextIndex].id
     }
 
-    private static func makeTab() -> BrowserTab {
+    static func makeTab() -> BrowserTab {
         BrowserTab(
             id: UUID(),
             model: FileBrowserViewModel(fileSystem: LocalFileSystemService())

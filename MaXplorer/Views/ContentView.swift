@@ -9,9 +9,15 @@ struct ContentView: View {
         VStack(spacing: 0) {
             BrowserTabStrip()
 
-            ActiveBrowserView(model: tabs.activeModel)
-                .id(tabs.activeTab.id)
-                .environmentObject(tabs.activeModel)
+            if tabs.isSpaceAnalyzerActive {
+                SpaceAnalyzerView()
+                    .environmentObject(tabs.spaceAnalyzerViewModel)
+                    .environmentObject(tabs)
+            } else {
+                ActiveBrowserView(model: tabs.activeModel)
+                    .id(tabs.activeTab.id)
+                    .environmentObject(tabs.activeModel)
+            }
         }
     }
 }
@@ -285,49 +291,63 @@ private struct BrowserTabStrip: View {
 
             HStack(spacing: tabSpacing) {
                 ForEach(tabs.tabs) { tab in
-                    BrowserTabButton(
-                        model: tab.model,
-                        isSelected: tab.id == tabs.selectedTabID,
-                        width: tabWidth,
-                        tabID: tab.id,
-                        onSelect: { tabs.selectTab(tab.id) },
-                        onReorder: { draggedID in tabs.moveTab(draggedID, before: tab.id) },
-                        onDropFiles: { droppedURLs in
-                            // Expand a single dragged URL to the full selection of whatever
-                            // tab the drag originated from. Mirrors urlsExpandingSelection()
-                            // used by folder-row drops.
-                            let droppedStd = Set(droppedURLs.map(\.standardizedFileURL))
-                            let expanded: [URL] = tabs.tabs.first(where: { t in
-                                let selStd = Set(
+                    if tab.id == tabs.spaceAnalyzerTabID {
+                        SpaceAnalyzerTabButton(
+                            isSelected: tab.id == tabs.selectedTabID,
+                            isScanning: tabs.spaceAnalyzerViewModel.isScanning,
+                            width: tabWidth,
+                            tabID: tab.id,
+                            onSelect: { tabs.selectTab(tab.id) },
+                            onReorder: { draggedID in tabs.moveTab(draggedID, before: tab.id) }
+                        )
+                        .contextMenu {
+                            Button("Close Space Analyzer") { tabs.closeSpaceAnalyzer() }
+                        }
+                    } else {
+                        BrowserTabButton(
+                            model: tab.model,
+                            isSelected: tab.id == tabs.selectedTabID,
+                            width: tabWidth,
+                            tabID: tab.id,
+                            onSelect: { tabs.selectTab(tab.id) },
+                            onReorder: { draggedID in tabs.moveTab(draggedID, before: tab.id) },
+                            onDropFiles: { droppedURLs in
+                                // Expand a single dragged URL to the full selection of whatever
+                                // tab the drag originated from. Mirrors urlsExpandingSelection()
+                                // used by folder-row drops.
+                                let droppedStd = Set(droppedURLs.map(\.standardizedFileURL))
+                                let expanded: [URL] = tabs.tabs.first(where: { t in
+                                    let selStd = Set(
+                                        t.model.displayedItems
+                                            .filter { t.model.selectedItemIDs.contains($0.id) }
+                                            .map { $0.url.standardizedFileURL }
+                                    )
+                                    return !selStd.isDisjoint(with: droppedStd)
+                                }).map { t in
                                     t.model.displayedItems
                                         .filter { t.model.selectedItemIDs.contains($0.id) }
-                                        .map { $0.url.standardizedFileURL }
-                                )
-                                return !selStd.isDisjoint(with: droppedStd)
-                            }).map { t in
-                                t.model.displayedItems
-                                    .filter { t.model.selectedItemIDs.contains($0.id) }
-                                    .map(\.url)
-                            } ?? droppedURLs
+                                        .map(\.url)
+                                } ?? droppedURLs
 
-                            tabs.selectTab(tab.id)
-                            tab.model.importItems(expanded, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
-                        }
-                    )
-                    .contextMenu {
-                        Button("Duplicate Tab") {
-                            tabs.duplicateTab(tab.id)
-                        }
-                        .keyboardShortcut("d", modifiers: [.command, .shift])
+                                tabs.selectTab(tab.id)
+                                tab.model.importItems(expanded, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+                            }
+                        )
+                        .contextMenu {
+                            Button("Duplicate Tab") {
+                                tabs.duplicateTab(tab.id)
+                            }
+                            .keyboardShortcut("d", modifiers: [.command, .shift])
 
-                        Divider()
+                            Divider()
 
-                        Button("Sort by Name") {
-                            tabs.sortTabsByName()
-                        }
+                            Button("Sort by Name") {
+                                tabs.sortTabsByName()
+                            }
 
-                        Button("Close Duplicate Tabs") {
-                            tabs.closeDuplicateTabs()
+                            Button("Close Duplicate Tabs") {
+                                tabs.closeDuplicateTabs()
+                            }
                         }
                     }
                 }
@@ -510,17 +530,80 @@ private struct BrowserTabButton: View {
     }
 }
 
+private struct SpaceAnalyzerTabButton: View {
+    let isSelected: Bool
+    let isScanning: Bool
+    let width: CGFloat
+    let tabID: UUID
+    let onSelect: () -> Void
+    let onReorder: (UUID) -> Void
+
+    @State private var isHovering = false
+    private let cornerRadius: CGFloat = 10
+    private let accentColor = Color.teal
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 6) {
+                if isScanning {
+                    ProgressView().controlSize(.mini).frame(width: 11, height: 11)
+                } else if width >= 62 {
+                    SpaceAnalyzerIcon(size: 11)
+                }
+                Text(isScanning ? "Scanning…" : "Space Analyzer")
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, max(7, min(11, width / 12)))
+            .frame(width: width, height: 26, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isSelected ? .primary : .secondary)
+        .background(tabBackground, in: RoundedRectangle(cornerRadius: cornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .stroke(borderStyle, lineWidth: isSelected ? 1 : 0.5)
+        }
+        .shadow(color: isSelected ? .black.opacity(0.12) : .clear, radius: 3, y: 1)
+        .animation(.easeOut(duration: 0.13), value: isHovering)
+        .animation(.easeOut(duration: 0.13), value: isSelected)
+        .onHover { isHovering = $0 }
+        .draggable(tabID.uuidString)
+        .dropDestination(for: String.self) { ids, _ in
+            guard let identifier = ids.first, let uuid = UUID(uuidString: identifier) else { return false }
+            onReorder(uuid)
+            return true
+        }
+    }
+
+    private var tabBackground: AnyShapeStyle {
+        if isSelected { return AnyShapeStyle(accentColor.opacity(0.18)) }
+        if isHovering { return AnyShapeStyle(accentColor.opacity(0.09)) }
+        return AnyShapeStyle(Color.clear)
+    }
+
+    private var borderStyle: AnyShapeStyle {
+        isSelected ? AnyShapeStyle(accentColor.opacity(0.5)) : AnyShapeStyle(Color.clear)
+    }
+}
+
 private struct SidebarView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
+    @EnvironmentObject private var tabs: BrowserTabsViewModel
     @AppStorage("sidebar.favoritesExpanded") private var favoritesExpanded = true
     @AppStorage("sidebar.networkExpanded") private var networkExpanded = true
     private let copyQueueSelectionID = "maxplorer://copy-queue"
     private let settingsSelectionID = "maxplorer://settings"
     private let aboutSelectionID = "maxplorer://about"
+    private let spaceAnalyzerSelectionID = "maxplorer://space-analyzer"
 
     var body: some View {
         List(selection: Binding(
             get: {
+                if tabs.isSpaceAnalyzerActive { return spaceAnalyzerSelectionID }
                 switch model.detailDestination {
                 case .copyQueue: return copyQueueSelectionID
                 case .settings: return settingsSelectionID
@@ -534,6 +617,8 @@ private struct SidebarView: View {
                 }
 
                 switch selection {
+                case spaceAnalyzerSelectionID:
+                    tabs.openSpaceAnalyzer()
                 case copyQueueSelectionID:
                     model.showCopyQueue()
                 case settingsSelectionID:
@@ -594,6 +679,20 @@ private struct SidebarView: View {
                 }
             } header: {
                 Text(SidebarLocation.Group.network.rawValue)
+            }
+
+            Section("Disk") {
+                Button {
+                    tabs.openSpaceAnalyzer()
+                } label: {
+                    HStack(spacing: 6) {
+                        SpaceAnalyzerIcon(size: 15)
+                        Text("Space Analyzer")
+                    }
+                }
+                .buttonStyle(.plain)
+                .sidebarHover()
+                .tag(spaceAnalyzerSelectionID)
             }
 
             Section("Copy Queue") {
@@ -741,6 +840,18 @@ private struct BrowserToolbar: View {
                     ) {
                         model.showConnectToServer()
                     }
+                }
+
+                ToolbarButtonGroup {
+                    Button {
+                        tabs.openSpaceAnalyzer(url: model.currentURL.isFileURL ? model.currentURL : nil)
+                    } label: {
+                        SpaceAnalyzerIcon(size: 14)
+                            .frame(width: 26, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .modernTooltip("Analyze disk space usage")
                 }
 
                 ToolbarButtonGroup {
@@ -1280,6 +1391,7 @@ private struct SidebarHoverModifier: ViewModifier {
 private struct FileTableView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var tabs: BrowserTabsViewModel
     @Binding var renameItem: FileItem?
     @Binding var renameText: String
     @Binding var itemsPendingTrash: [FileItem]
@@ -1419,6 +1531,15 @@ private struct FileTableView: View {
 
                 Divider()
 
+                Button("Analyze Space under Selected Folder") {
+                    guard let id = selection.first,
+                          let item = model.items.first(where: { $0.id == id }),
+                          item.isDirectory else { return }
+                    model.selectedItemIDs = selection
+                    tabs.openSpaceAnalyzer(url: item.url)
+                }
+                .disabled(!canAnalyzeSpace(selection: selection))
+
                 Button("Copy Path") {
                     model.selectedItemIDs = selection
                     model.copySelectedPath()
@@ -1543,6 +1664,12 @@ private struct FileTableView: View {
         selection.contains { id in
             model.items.first { $0.id == id }?.isNetworkLocation == false
         }
+    }
+
+    private func canAnalyzeSpace(selection: Set<FileItem.ID>) -> Bool {
+        guard selection.count == 1, let id = selection.first,
+              let item = model.items.first(where: { $0.id == id }) else { return false }
+        return item.isDirectory && !item.isNetworkLocation
     }
 
     private var emptyDescription: String {

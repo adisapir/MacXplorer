@@ -1,0 +1,11 @@
+{
+  "categories": [
+    { "name": "Media (Videos)", "color": "#C0392B", "extensions": ["mp4","mov","avi","mkv","m4v","wmv","flv","webm","ts","vob"] },
+    { "name": "Media (Music)", "color": "#8E44AD", "extensions": ["mp3","aac","flac","m4a","wav","ogg","aiff","opus","wma"] },
+    { "name": "Images", "color": "#27AE60", "extensions": ["jpg","jpeg","png","gif","bmp","tiff","tif","heic","heif","webp","svg","raw","cr2","nef","arw"] },
+    { "name": "Apps", "color": "#2980B9", "extensions": ["app","dmg","pkg","ipa"] },
+    { "name": "Archives", "color": "#D35400", "extensions": ["zip","tar","gz","bz2","xz","7z","rar","tgz","tbz2"] },
+    { "name": "Documents", "color": "#16A085", "extensions": ["pdf","doc","docx","xls","xlsx","ppt","pptx","pages","numbers","key","odt","rtf","txt","md"] }
+  ],
+  "uncategorizedColor": "#7F8C8D"
+}
