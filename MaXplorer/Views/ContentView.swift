@@ -284,6 +284,13 @@ private struct BrowserTabStrip: View {
                         }
                     )
                     .contextMenu {
+                        Button("Duplicate Tab") {
+                            tabs.duplicateTab(tab.id)
+                        }
+                        .keyboardShortcut("d", modifiers: [.command, .shift])
+
+                        Divider()
+
                         Button("Sort by Name") {
                             tabs.sortTabsByName()
                         }
@@ -605,6 +612,7 @@ private struct PulsingStatusDot: View {
 
 private struct BrowserToolbar: View {
     @EnvironmentObject private var model: FileBrowserViewModel
+    @EnvironmentObject private var tabs: BrowserTabsViewModel
     @EnvironmentObject private var settings: AppSettings
     @FocusState private var pathFocused: Bool
 
@@ -681,14 +689,14 @@ private struct BrowserToolbar: View {
                 ToolbarButtonGroup {
                     ToolbarToggleButton(
                         systemName: "eye.fill",
-                        help: model.showHiddenFiles ? "Hide hidden files (⌘⇧.)" : "Show hidden files (⌘⇧.)",
-                        isOn: $model.showHiddenFiles
+                        help: tabs.showHiddenFiles ? "Hide hidden files (⌘⇧.)" : "Show hidden files (⌘⇧.)",
+                        isOn: $tabs.showHiddenFiles
                     )
 
                     ToolbarToggleButton(
                         systemName: "a.square.fill",
-                        help: model.showAliases ? "Hide aliases (⌘⇧A)" : "Show aliases (⌘⇧A)",
-                        isOn: $model.showAliases,
+                        help: tabs.showAliases ? "Hide aliases (⌘⇧A)" : "Show aliases (⌘⇧A)",
+                        isOn: $tabs.showAliases,
                         iconSize: 22
                     )
                 }

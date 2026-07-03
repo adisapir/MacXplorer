@@ -15,6 +15,12 @@ final class BrowserTabsViewModel: ObservableObject {
         }
     }
     @Published private(set) var maximumConcurrentTabs: Int
+    @Published var showHiddenFiles = false {
+        didSet { for tab in tabs { tab.model.showHiddenFiles = showHiddenFiles } }
+    }
+    @Published var showAliases = true {
+        didSet { for tab in tabs { tab.model.showAliases = showAliases } }
+    }
 
     // Forwards the active tab's model changes so that anything observing this
     // object (notably the App scene's `.commands`, which cannot observe the
@@ -62,6 +68,8 @@ final class BrowserTabsViewModel: ObservableObject {
 
         let tab = Self.makeTab()
         tab.model.setListingOptions(listingOptions)
+        tab.model.showHiddenFiles = showHiddenFiles
+        tab.model.showAliases = showAliases
         tabs.append(tab)
         selectedTabID = tab.id
     }
@@ -114,6 +122,18 @@ final class BrowserTabsViewModel: ObservableObject {
         let moved = tabs.remove(at: fromIndex)
         let insertionIndex = tabs.firstIndex(where: { $0.id == targetID }) ?? targetIndex
         tabs.insert(moved, at: insertionIndex)
+    }
+
+    func duplicateTab(_ tabID: BrowserTab.ID) {
+        guard canAddTab, let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
+        let source = tabs[index]
+        let tab = Self.makeTab()
+        tab.model.setListingOptions(listingOptions)
+        tab.model.showHiddenFiles = showHiddenFiles
+        tab.model.showAliases = showAliases
+        tab.model.navigate(to: source.model.currentURL)
+        tabs.insert(tab, at: index + 1)
+        selectedTabID = tab.id
     }
 
     func sortTabsByName() {

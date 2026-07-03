@@ -43,6 +43,12 @@ struct MaXplorerApp: App {
                 .keyboardShortcut("t", modifiers: .command)
                 .disabled(!tabs.canAddTab)
 
+                Button("Duplicate Tab") {
+                    tabs.duplicateTab(tabs.selectedTabID)
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+                .disabled(!tabs.canAddTab)
+
                 Divider()
 
                 Button("Open") {
@@ -131,16 +137,10 @@ struct MaXplorerApp: App {
                 }
                 .keyboardShortcut("r", modifiers: .command)
 
-                Toggle("Show Hidden Files", isOn: Binding(
-                    get: { model.showHiddenFiles },
-                    set: { model.showHiddenFiles = $0 }
-                ))
+                Toggle("Show Hidden Files", isOn: $tabs.showHiddenFiles)
                     .keyboardShortcut(".", modifiers: [.command, .shift])
 
-                Toggle("Show Aliases", isOn: Binding(
-                    get: { model.showAliases },
-                    set: { model.showAliases = $0 }
-                ))
+                Toggle("Show Aliases", isOn: $tabs.showAliases)
                     .keyboardShortcut("a", modifiers: [.command, .shift])
             }
 
