@@ -130,6 +130,13 @@ struct MaXplorerApp: App {
             }
 
             CommandMenu("View") {
+                Button("Filter Items") {
+                    model.shouldFocusFilter = true
+                }
+                .keyboardShortcut("f", modifiers: .command)
+
+                Divider()
+
                 Button("Reload") {
                     model.reload()
                 }

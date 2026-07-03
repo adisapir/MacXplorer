@@ -44,6 +44,7 @@ final class FileBrowserViewModel: ObservableObject {
     @Published var copyConflictRequest: CopyConflictRequest?
     @Published var pathText: String
     @Published var filterText = ""
+    @Published var shouldFocusFilter = false
     @Published var selectedItemIDs: Set<FileItem.ID> = []
     @Published var sortOrder = [KeyPathComparator(\FileItem.name)]
     @Published var renameRequest: FileItem?

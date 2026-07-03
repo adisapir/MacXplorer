@@ -627,6 +627,7 @@ private struct BrowserToolbar: View {
     @EnvironmentObject private var tabs: BrowserTabsViewModel
     @EnvironmentObject private var settings: AppSettings
     @FocusState private var pathFocused: Bool
+    @FocusState private var filterFocused: Bool
 
     var body: some View {
         VStack(spacing: 8) {
@@ -744,6 +745,7 @@ private struct BrowserToolbar: View {
                     TextField("Filter current folder", text: $model.filterText)
                         .textFieldStyle(.plain)
                         .frame(width: 220)
+                        .focused($filterFocused)
                 }
                 .font(.system(size: 13, weight: .medium))
                 .padding(.horizontal, 12)
@@ -752,6 +754,11 @@ private struct BrowserToolbar: View {
                 .modernTooltip("Filter items shown in the current folder")
             }
             .symbolRenderingMode(.hierarchical)
+            }
+            .onChange(of: model.shouldFocusFilter) { _, should in
+                guard should else { return }
+                filterFocused = true
+                model.shouldFocusFilter = false
             }
 
             HStack(spacing: 8) {

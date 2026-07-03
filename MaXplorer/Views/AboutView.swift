@@ -30,6 +30,7 @@ enum AppInfo {
 struct AboutView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
     @State private var isChangelogPresented = false
+    @State private var isReadmePresented = false
 
     var body: some View {
         ScrollView {
@@ -53,6 +54,11 @@ struct AboutView: View {
         .sheet(isPresented: $isChangelogPresented) {
             ChangelogSheet {
                 isChangelogPresented = false
+            }
+        }
+        .sheet(isPresented: $isReadmePresented) {
+            ReadmeSheet {
+                isReadmePresented = false
             }
         }
     }
@@ -90,6 +96,17 @@ struct AboutView: View {
                 isChangelogPresented = true
             } label: {
                 Label("View Changelog", systemImage: "clock.arrow.circlepath")
+                    .font(.headline)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.glass)
+            .controlSize(.large)
+
+            Button {
+                isReadmePresented = true
+            } label: {
+                Label("README", systemImage: "doc.text")
                     .font(.headline)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
@@ -295,5 +312,56 @@ enum ChangelogParser {
 
                 return ChangelogLine(kind: .body, text: line)
             }
+    }
+}
+
+/// Loads the bundled `README.md` copied in by a build phase.
+enum ReadmeLoader {
+    static func load() -> String {
+        guard let url = Bundle.main.url(forResource: "README", withExtension: "md"),
+              let contents = try? String(contentsOf: url, encoding: .utf8) else {
+            return "# README\n\nNo README is available in this build."
+        }
+        return contents
+    }
+}
+
+/// Popup sheet that renders the README markdown using the same renderer as the changelog.
+private struct ReadmeSheet: View {
+    let onClose: () -> Void
+
+    private let entries: [ChangelogLine] = ChangelogParser.parse(ReadmeLoader.load())
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 22, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Color.accentColor)
+
+                Text("README")
+                    .font(.headline)
+
+                Spacer(minLength: 16)
+
+                Button("Done", action: onClose)
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(16)
+            .background(.bar)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(entries) { line in
+                        ChangelogLineView(line: line)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+            }
+            .background(Color(nsColor: .textBackgroundColor))
+        }
+        .frame(minWidth: 560, minHeight: 460)
     }
 }

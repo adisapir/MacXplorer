@@ -25,25 +25,45 @@ Current implementation status:
 
 ## Keyboard Shortcuts
 
+### File & Folder Actions
 | Shortcut | Action |
 | --- | --- |
-| `⌘T` | New Tab |
 | `⌘O` | Open selected item |
 | `Space` | Quick View selected item |
 | `⌘⇧N` | New Folder |
 | `⌘⇧R` | Rename selected item |
 | `⌘⌫` | Move selected items to Trash |
 | `⌃⌘R` | Reveal selected item in Finder |
+| `⌘⇧T` | Open Terminal at selected item/current folder |
+
+### Edit & Clipboard
+| Shortcut | Action |
+| --- | --- |
 | `⌘C` | Copy selected items |
 | `⌘X` | Cut selected items for move on paste |
 | `⌘V` | Paste copied or cut items |
 | `⌘A` | Select all items in the current folder |
 | `⌘⌥C` | Copy selected path, or current folder path if nothing is selected |
+
+### View
+| Shortcut | Action |
+| --- | --- |
+| `⌘F` | Focus the filter field |
 | `⌘R` | Reload current folder |
 | `⌘⇧.` | Toggle hidden files |
 | `⌘⇧A` | Toggle aliases |
+
+### Tabs
+| Shortcut | Action |
+| --- | --- |
+| `⌘T` | New Tab |
+| `⌘⇧D` | Duplicate Tab |
 | `⌃⇥` | Select next tab |
 | `⌃⇧⇥` | Select previous tab |
+
+### Navigation
+| Shortcut | Action |
+| --- | --- |
 | `⌘[` | Back |
 | `⌫` | Back (when the file list is focused) |
 | `⌘]` | Forward |
@@ -51,19 +71,6 @@ Current implementation status:
 | `⌘⇧G` | Go to Folder |
 | `⌘⇧H` | Home |
 | `⌘K` | Connect to Server |
-| `⌘⇧T` | Open Terminal at selected item/current folder |
-
-## Build
-
-```bash
-swift build
-```
-
-## Run
-
-```bash
-swift run MaXplorer
-```
 
 ## Platform support
 

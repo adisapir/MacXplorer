@@ -56,6 +56,7 @@
 				DDC3BB032FF5524A009477D7 /* Frameworks */,
 				DDC3BB042FF5524A009477D7 /* Resources */,
 				DDC3BBA02FF5524A009477D7 /* Copy Changelog */,
+				DDC3BBA12FF5524A009477D7 /* Copy README */,
 			);
 			buildRules = (
 			);
@@ -127,6 +128,23 @@
 			name = "Copy Changelog";
 			outputPaths = (
 				"$(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ChangeLog.md",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			sandboxedScriptExecution = 0;
+			shellPath = /bin/sh;
+			shellScript = "cp -f \"${SCRIPT_INPUT_FILE_0}\" \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+		};
+		DDC3BBA12FF5524A009477D7 /* Copy README */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/README.md",
+			);
+			name = "Copy README";
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/README.md",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			sandboxedScriptExecution = 0;
