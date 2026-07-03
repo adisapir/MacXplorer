@@ -8,22 +8,16 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             BrowserTabStrip()
-
-            if tabs.isSpaceAnalyzerActive {
-                SpaceAnalyzerView()
-                    .environmentObject(tabs.spaceAnalyzerViewModel)
-                    .environmentObject(tabs)
-            } else {
-                ActiveBrowserView(model: tabs.activeModel)
-                    .id(tabs.activeTab.id)
-                    .environmentObject(tabs.activeModel)
-            }
+            ActiveBrowserView(model: tabs.activeModel)
+                .id(tabs.activeTab.id)
+                .environmentObject(tabs.activeModel)
         }
     }
 }
 
 private struct ActiveBrowserView: View {
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var tabs: BrowserTabsViewModel
     @ObservedObject var model: FileBrowserViewModel
     @State private var renameItem: FileItem?
     @State private var renameText = ""
@@ -45,22 +39,28 @@ private struct ActiveBrowserView: View {
             case .settings:
                 SettingsSurface()
             case .files:
-                VStack(spacing: 0) {
-                    BrowserToolbar()
-                    FileTableView(
-                        renameItem: $renameItem,
-                        renameText: $renameText,
-                        itemsPendingTrash: $itemsPendingTrash
-                    )
-                    StatusBar()
-                }
-                .onKeyPress(.delete) {
-                    guard model.canGoBack else {
-                        return .ignored
+                if tabs.isSpaceAnalyzerActive {
+                    SpaceAnalyzerView()
+                        .environmentObject(tabs.spaceAnalyzerViewModel)
+                        .environmentObject(tabs)
+                } else {
+                    VStack(spacing: 0) {
+                        BrowserToolbar()
+                        FileTableView(
+                            renameItem: $renameItem,
+                            renameText: $renameText,
+                            itemsPendingTrash: $itemsPendingTrash
+                        )
+                        StatusBar()
                     }
+                    .onKeyPress(.delete) {
+                        guard model.canGoBack else {
+                            return .ignored
+                        }
 
-                    model.goBack()
-                    return .handled
+                        model.goBack()
+                        return .handled
+                    }
                 }
             }
         }
@@ -1353,7 +1353,7 @@ private struct TooltipBubble: View {
     }
 }
 
-private extension View {
+extension View {
     func modernTooltip(_ text: String) -> some View {
         modifier(ModernTooltipModifier(text: text))
     }

@@ -317,6 +317,6 @@ private struct TileView: View {
                 NSPasteboard.general.setString(node.url.path(percentEncoded: false), forType: .string)
             }
         }
-        .help("\(node.name)\n\(ByteCountFormatter.string(fromByteCount: Int64(node.size), countStyle: .file))")
+        .modernTooltip("\(node.name)\n\(node.url.path(percentEncoded: false))\n\(ByteCountFormatter.string(fromByteCount: Int64(node.size), countStyle: .file))")
     }
 }
