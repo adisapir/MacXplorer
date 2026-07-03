@@ -74,12 +74,22 @@ final class SpaceAnalyzerViewModel: ObservableObject {
 
 // MARK: – Background scanner
 
-enum SpaceScanner {
+// `nonisolated` is essential: this project uses MainActor-default isolation, so
+// without it these methods would be @MainActor and run on the main thread even
+// inside Task.detached — freezing the UI during a scan.
+nonisolated enum SpaceScanner {
     static func scan(url: URL, progressHandler: @escaping @Sendable (Int) async -> Void) async throws -> SpaceNode {
-        try await Task.detached(priority: .userInitiated) {
+        // Task.detached is unstructured, so cancellation of the caller does not
+        // automatically propagate. withTaskCancellationHandler bridges the gap.
+        let detached = Task.detached(priority: .utility) {
             var count = 0
             return try scanSync(url: url, count: &count, progressHandler: progressHandler)
-        }.value
+        }
+        return try await withTaskCancellationHandler {
+            try await detached.value
+        } onCancel: {
+            detached.cancel()
+        }
     }
 
     private static func scanSync(

@@ -638,6 +638,12 @@ private struct SidebarView: View {
                         .sidebarHover()
                         .tag(location.url.absoluteString)
                         .contextMenu {
+                            if location.url.isFileURL {
+                                Button("Analyze Space under Selected Folder") {
+                                    tabs.openSpaceAnalyzer(url: location.url)
+                                }
+                                Divider()
+                            }
                             if location.canRemoveFromFavorites {
                                 Button("Remove from Favorites") {
                                     model.removeFavorite(location.url)
@@ -661,6 +667,13 @@ private struct SidebarView: View {
                     Label(location.name, systemImage: location.systemImage)
                         .sidebarHover()
                         .tag(location.url.absoluteString)
+                        .contextMenu {
+                            if location.url.isFileURL {
+                                Button("Analyze Space under Selected Folder") {
+                                    tabs.openSpaceAnalyzer(url: location.url)
+                                }
+                            }
+                        }
                 }
             }
 
@@ -1188,6 +1201,7 @@ private struct ToolbarToggleButton: View {
 
 private struct ModernTooltipModifier: ViewModifier {
     let text: String
+    var usesCursorPosition: Bool = false
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovering = false
     @State private var isPresented = false
@@ -1217,7 +1231,12 @@ private struct ModernTooltipModifier: ViewModifier {
                 }
             }
             .background(
-                TooltipAnchorView(text: text, isPresented: isPresented, colorScheme: colorScheme)
+                TooltipAnchorView(
+                    text: text,
+                    isPresented: isPresented,
+                    colorScheme: colorScheme,
+                    usesCursorPosition: usesCursorPosition
+                )
             )
     }
 }
@@ -1226,13 +1245,15 @@ private struct TooltipAnchorView: NSViewRepresentable {
     let text: String
     let isPresented: Bool
     let colorScheme: ColorScheme
+    var usesCursorPosition: Bool = false
 
     func makeNSView(context: Context) -> TooltipAnchorNSView {
         TooltipAnchorNSView()
     }
 
     func updateNSView(_ nsView: TooltipAnchorNSView, context: Context) {
-        nsView.update(text: text, isPresented: isPresented, colorScheme: colorScheme)
+        nsView.update(text: text, isPresented: isPresented, colorScheme: colorScheme,
+                      usesCursorPosition: usesCursorPosition)
     }
 }
 
@@ -1240,16 +1261,18 @@ private final class TooltipAnchorNSView: NSView {
     private var text = ""
     private var isPresented = false
     private var colorScheme: ColorScheme = .light
+    private var usesCursorPosition = false
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateTooltipVisibility()
     }
 
-    func update(text: String, isPresented: Bool, colorScheme: ColorScheme) {
+    func update(text: String, isPresented: Bool, colorScheme: ColorScheme, usesCursorPosition: Bool) {
         self.text = text
         self.isPresented = isPresented
         self.colorScheme = colorScheme
+        self.usesCursorPosition = usesCursorPosition
         updateTooltipVisibility()
     }
 
@@ -1259,7 +1282,8 @@ private final class TooltipAnchorNSView: NSView {
             return
         }
 
-        TooltipWindowPresenter.shared.show(text: text, anchor: self, colorScheme: colorScheme)
+        TooltipWindowPresenter.shared.show(text: text, anchor: self, colorScheme: colorScheme,
+                                           usesCursorPosition: usesCursorPosition)
     }
 }
 
@@ -1270,7 +1294,7 @@ private final class TooltipWindowPresenter {
     private var panel: NSPanel?
     private weak var currentAnchor: NSView?
 
-    func show(text: String, anchor: NSView, colorScheme: ColorScheme) {
+    func show(text: String, anchor: NSView, colorScheme: ColorScheme, usesCursorPosition: Bool = false) {
         currentAnchor = anchor
 
         let rootView = TooltipBubble(text: text)
@@ -1281,12 +1305,25 @@ private final class TooltipWindowPresenter {
         let panel = panel ?? makePanel()
         panel.contentView = hostingView
 
-        let screenFrame = anchor.window?.convertToScreen(anchor.convert(anchor.bounds, to: nil)) ?? .zero
         let panelSize = hostingView.fittingSize
-        let origin = NSPoint(
-            x: screenFrame.midX - (panelSize.width / 2),
-            y: screenFrame.maxY + 8
-        )
+        let origin: NSPoint
+        if usesCursorPosition {
+            let cursor = NSEvent.mouseLocation
+            let screenBounds = NSScreen.screens.first(where: { $0.frame.contains(cursor) })?.visibleFrame
+                ?? NSScreen.main?.visibleFrame ?? .zero
+            let rawX = cursor.x + 14
+            let rawY = cursor.y - panelSize.height - 10
+            origin = NSPoint(
+                x: min(rawX, screenBounds.maxX - panelSize.width - 4),
+                y: max(rawY, screenBounds.minY + 4)
+            )
+        } else {
+            let screenFrame = anchor.window?.convertToScreen(anchor.convert(anchor.bounds, to: nil)) ?? .zero
+            origin = NSPoint(
+                x: screenFrame.midX - (panelSize.width / 2),
+                y: screenFrame.maxY + 8
+            )
+        }
 
         panel.setFrame(NSRect(origin: origin, size: panelSize), display: true)
         panel.orderFrontRegardless()
@@ -1327,11 +1364,11 @@ private struct TooltipBubble: View {
         Text(text)
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(foregroundColor)
-            .lineLimit(2)
-            .multilineTextAlignment(.center)
+            .lineLimit(4)
+            .multilineTextAlignment(.leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .frame(maxWidth: 280)
+            .frame(maxWidth: 360)
             .background(backgroundColor, in: RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
@@ -1356,6 +1393,12 @@ private struct TooltipBubble: View {
 extension View {
     func modernTooltip(_ text: String) -> some View {
         modifier(ModernTooltipModifier(text: text))
+    }
+
+    /// Like modernTooltip but positions the popup at the current cursor location
+    /// rather than above the anchor view — suited for large tiles and map surfaces.
+    func tileTooltip(_ text: String) -> some View {
+        modifier(ModernTooltipModifier(text: text, usesCursorPosition: true))
     }
 
     func sidebarHover() -> some View {

@@ -140,11 +140,19 @@ struct SpaceAnalyzerView: View {
                 .foregroundStyle(.secondary)
             TextField("Root Folder", text: $viewModel.rootPath)
                 .textFieldStyle(.plain)
-                .onSubmit { viewModel.refresh() }
-            Button("Refresh") { viewModel.refresh() }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
                 .disabled(viewModel.isScanning)
+                .onSubmit { viewModel.refresh() }
+
+            if viewModel.isScanning {
+                Button("Cancel Scan") { viewModel.cancelScan() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .controlSize(.small)
+            } else {
+                Button("Scan") { viewModel.refresh() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -181,13 +189,11 @@ struct SpaceAnalyzerView: View {
     }
 
     private func scanningView(count: Int) -> some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 16) {
             ProgressView()
                 .controlSize(.large)
             Text("Scanning… \(count) items found")
                 .foregroundStyle(.secondary)
-            Button("Cancel", role: .cancel) { viewModel.cancelScan() }
-                .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -244,7 +250,11 @@ private struct TreemapCanvas: View {
             ZStack(alignment: .topLeading) {
                 Color(nsColor: .windowBackgroundColor)
                 ForEach(tileList, id: \.node.id) { item in
-                    TileView(node: item.node, frame: item.frame, categories: categories, tabs: tabs)
+                    TileView(node: item.node, size: item.frame.size, categories: categories, tabs: tabs)
+                        .frame(width: item.frame.width, height: item.frame.height)
+                        // .position is layout-affecting (unlike .offset), so the tile's
+                        // hit region — including its context menu — lands where it renders.
+                        .position(x: item.frame.midX, y: item.frame.midY)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -277,13 +287,13 @@ private struct TreemapCanvas: View {
 
 private struct TileView: View {
     let node: SpaceNode
-    let frame: CGRect
+    let size: CGSize
     let categories: FileCategoryService
     let tabs: BrowserTabsViewModel
 
     var body: some View {
         let color = node.isDirectory ? categories.directoryColor : categories.color(for: node.url)
-        let showLabel = frame.width > 40 && frame.height > 22
+        let showLabel = size.width > 40 && size.height > 22
 
         ZStack(alignment: .bottom) {
             color
@@ -291,18 +301,18 @@ private struct TileView: View {
 
             if showLabel {
                 Text(node.name)
-                    .font(.system(size: min(11, frame.height * 0.25)))
+                    .font(.system(size: min(11, size.height * 0.25)))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
                     .padding(.horizontal, 3)
                     .padding(.bottom, 2)
-                    .frame(maxWidth: frame.width - 4)
+                    .frame(maxWidth: size.width - 4)
             }
         }
-        .frame(width: frame.width, height: frame.height)
-        .offset(x: frame.minX, y: frame.minY)
+        .frame(width: size.width, height: size.height)
+        .contentShape(Rectangle())
         .contextMenu {
             Button("Open") {
                 NSWorkspace.shared.open(node.url)
@@ -317,6 +327,6 @@ private struct TileView: View {
                 NSPasteboard.general.setString(node.url.path(percentEncoded: false), forType: .string)
             }
         }
-        .modernTooltip("\(node.name)\n\(node.url.path(percentEncoded: false))\n\(ByteCountFormatter.string(fromByteCount: Int64(node.size), countStyle: .file))")
+        .tileTooltip("\(node.name)\n\(node.url.path(percentEncoded: false))\n\(ByteCountFormatter.string(fromByteCount: Int64(node.size), countStyle: .file))")
     }
 }
