@@ -326,11 +326,11 @@ enum ReadmeLoader {
     }
 }
 
-/// Popup sheet that renders the README markdown using the same renderer as the changelog.
+/// Popup sheet that renders the README with proper Markdown formatting.
 private struct ReadmeSheet: View {
     let onClose: () -> Void
 
-    private let entries: [ChangelogLine] = ChangelogParser.parse(ReadmeLoader.load())
+    private let markdown: String = ReadmeLoader.load()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -352,16 +352,11 @@ private struct ReadmeSheet: View {
             .background(.bar)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(entries) { line in
-                        ChangelogLineView(line: line)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(20)
+                MarkdownDocumentView(markdown: markdown)
+                    .padding(20)
             }
             .background(Color(nsColor: .textBackgroundColor))
         }
-        .frame(minWidth: 560, minHeight: 460)
+        .frame(minWidth: 640, minHeight: 520)
     }
 }

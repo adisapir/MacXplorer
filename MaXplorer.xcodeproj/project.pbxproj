@@ -130,7 +130,6 @@
 				"$(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ChangeLog.md",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
-			sandboxedScriptExecution = 0;
 			shellPath = /bin/sh;
 			shellScript = "cp -f \"${SCRIPT_INPUT_FILE_0}\" \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 		};
@@ -147,7 +146,6 @@
 				"$(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/README.md",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
-			sandboxedScriptExecution = 0;
 			shellPath = /bin/sh;
 			shellScript = "cp -f \"${SCRIPT_INPUT_FILE_0}\" \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 		};

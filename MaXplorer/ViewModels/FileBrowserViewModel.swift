@@ -44,7 +44,7 @@ final class FileBrowserViewModel: ObservableObject {
     @Published var copyConflictRequest: CopyConflictRequest?
     @Published var pathText: String
     @Published var filterText = ""
-    @Published var shouldFocusFilter = false
+    let filterFocusProxy = FilterFocusProxy()
     @Published var selectedItemIDs: Set<FileItem.ID> = []
     @Published var sortOrder = [KeyPathComparator(\FileItem.name)]
     @Published var renameRequest: FileItem?
@@ -232,6 +232,10 @@ final class FileBrowserViewModel: ObservableObject {
 
     func reload() {
         Task { await self.reload(selecting: nil) }
+    }
+
+    func focusFilterField() {
+        filterFocusProxy.focus()
     }
 
     /// Updates which extra (slow) per-file metadata is fetched, reloading only

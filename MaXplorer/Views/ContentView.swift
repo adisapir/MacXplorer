@@ -291,8 +291,26 @@ private struct BrowserTabStrip: View {
                         tabID: tab.id,
                         onSelect: { tabs.selectTab(tab.id) },
                         onReorder: { draggedID in tabs.moveTab(draggedID, before: tab.id) },
-                        onDropFiles: { urls in
-                            tab.model.importItems(urls, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+                        onDropFiles: { droppedURLs in
+                            // Expand a single dragged URL to the full selection of whatever
+                            // tab the drag originated from. Mirrors urlsExpandingSelection()
+                            // used by folder-row drops.
+                            let droppedStd = Set(droppedURLs.map(\.standardizedFileURL))
+                            let expanded: [URL] = tabs.tabs.first(where: { t in
+                                let selStd = Set(
+                                    t.model.displayedItems
+                                        .filter { t.model.selectedItemIDs.contains($0.id) }
+                                        .map { $0.url.standardizedFileURL }
+                                )
+                                return !selStd.isDisjoint(with: droppedStd)
+                            }).map { t in
+                                t.model.displayedItems
+                                    .filter { t.model.selectedItemIDs.contains($0.id) }
+                                    .map(\.url)
+                            } ?? droppedURLs
+
+                            tabs.selectTab(tab.id)
+                            tab.model.importItems(expanded, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
                         }
                     )
                     .contextMenu {
@@ -414,6 +432,7 @@ private struct BrowserTabButton: View {
         }
         .dropDestination(for: URL.self) { urls, _ in
             cancelSpringLoad()
+            onSelect()
             onDropFiles(urls)
             return true
         } isTargeted: { targeted in
@@ -627,7 +646,6 @@ private struct BrowserToolbar: View {
     @EnvironmentObject private var tabs: BrowserTabsViewModel
     @EnvironmentObject private var settings: AppSettings
     @FocusState private var pathFocused: Bool
-    @FocusState private var filterFocused: Bool
 
     var body: some View {
         VStack(spacing: 8) {
@@ -742,10 +760,12 @@ private struct BrowserToolbar: View {
                 HStack(spacing: 6) {
                     Image(systemName: "line.3.horizontal.decrease.circle")
                         .foregroundStyle(.secondary)
-                    TextField("Filter current folder", text: $model.filterText)
-                        .textFieldStyle(.plain)
-                        .frame(width: 220)
-                        .focused($filterFocused)
+                    FilterTextField(
+                        text: $model.filterText,
+                        placeholder: "Filter current folder",
+                        proxy: model.filterFocusProxy
+                    )
+                    .frame(width: 220)
                 }
                 .font(.system(size: 13, weight: .medium))
                 .padding(.horizontal, 12)
@@ -754,11 +774,6 @@ private struct BrowserToolbar: View {
                 .modernTooltip("Filter items shown in the current folder")
             }
             .symbolRenderingMode(.hierarchical)
-            }
-            .onChange(of: model.shouldFocusFilter) { _, should in
-                guard should else { return }
-                filterFocused = true
-                model.shouldFocusFilter = false
             }
 
             HStack(spacing: 8) {

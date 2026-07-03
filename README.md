@@ -8,7 +8,7 @@ MaXplorer is a native macOS file manager aimed at Windows Explorer-style navigat
 - **Cut & paste for moves** — use `⌘X` / `⌘V` to move files the way Windows users expect, instead of hunting for Option+drag.
 - **Visible copy queue with per-file progress** — watch every active transfer in a dedicated queue panel, with speed and estimated time remaining. No more wondering whether Finder finished copying.
 - **Granular conflict resolution** — when pasting or dropping files that already exist, choose Overwrite, Overwrite All, Skip, Skip All, or Cancel — one conflict at a time, with no surprises.
-- **Instant folder filtering** — `⌘F` focuses a live filter field that narrows the current folder in real time, no Spotlight index required.
+- **Instant folder filtering** — `⌥⌘F` focuses a live filter field that narrows the current folder in real time, no Spotlight index required.
 - **Configurable columns** — show or hide Kind, Size, Date Modified, Date Created, Date Taken, and Owner per-session. Columns are persisted across launches.
 - **Network browsing built in** — browse `/Network`, mounted SMB/AFP volumes, and Connect to Server without leaving the app.
 - **Customisable sidebar** — pin any folder as a favourite, remove built-in locations you never use, and reorder pins by dragging.
@@ -41,7 +41,7 @@ MaXplorer is a native macOS file manager aimed at Windows Explorer-style navigat
 ### View
 | Shortcut | Action |
 | --- | --- |
-| `⌘F` | Focus the filter field |
+| `⌥⌘F` | Focus the filter field |
 | `⌘R` | Reload current folder |
 | `⌘⇧.` | Toggle hidden files |
 | `⌘⇧A` | Toggle aliases |

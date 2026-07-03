@@ -131,9 +131,9 @@ struct MaXplorerApp: App {
 
             CommandMenu("View") {
                 Button("Filter Items") {
-                    model.shouldFocusFilter = true
+                    model.focusFilterField()
                 }
-                .keyboardShortcut("f", modifiers: .command)
+                .keyboardShortcut("f", modifiers: [.command, .option])
 
                 Divider()
 
