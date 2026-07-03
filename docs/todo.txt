@@ -1,0 +1,3 @@
+Todo:
+- integrated shell
+- copy/move overwrite/skip/cancel

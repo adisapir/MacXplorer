@@ -28,7 +28,7 @@ final class FileBrowserViewModel: ObservableObject {
     private static let maximumQuickViewBytes = 10 * 1024 * 1024
     private static let pinnedFavoritesKey = "PinnedFavoritePaths"
     private static let removedBuiltInFavoritesKey = "RemovedBuiltInFavoritePaths"
-    private static let networkRootURL = URL(string: "macxplorer://network")!
+    private static let networkRootURL = URL(string: "maxplorer://network")!
 
     @Published private(set) var currentURL: URL
     @Published private(set) var items: [FileItem] = []

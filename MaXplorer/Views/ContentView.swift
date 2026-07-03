@@ -454,9 +454,9 @@ private struct BrowserTabButton: View {
 
 private struct SidebarView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
-    private let copyQueueSelectionID = "macxplorer://copy-queue"
-    private let settingsSelectionID = "macxplorer://settings"
-    private let aboutSelectionID = "macxplorer://about"
+    private let copyQueueSelectionID = "maxplorer://copy-queue"
+    private let settingsSelectionID = "maxplorer://settings"
+    private let aboutSelectionID = "maxplorer://about"
 
     var body: some View {
         List(selection: Binding(
