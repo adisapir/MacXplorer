@@ -18,9 +18,9 @@ enum DetailDestination: Equatable {
 
 struct CopyConflictRequest: Identifiable, Equatable {
     let id = UUID()
-    let sources: [URL]
-    let destinationDirectory: URL
-    let conflictingNames: [String]
+    let conflictingName: String
+    let conflictNumber: Int
+    let totalConflicts: Int
 }
 
 @MainActor
@@ -65,6 +65,20 @@ final class FileBrowserViewModel: ObservableObject {
     private var selectionAnchorID: FileItem.ID?
     private var destinationBeforeAuxiliaryDetail: DetailDestination = .files
     private var listingOptions = DirectoryListingOptions()
+    private var conflictSession: ConflictSession?
+
+    private struct ConflictSession {
+        enum Operation {
+            case copy(maximumConcurrentCopies: Int)
+            case move(shouldClearCut: Bool)
+        }
+        let allSources: [URL]
+        let destinationDirectory: URL
+        let operation: Operation
+        var approvedItems: [(source: URL, shouldOverwrite: Bool)]
+        var remainingConflictIndices: [Int]
+        let totalConflicts: Int
+    }
 
     init(fileSystem: FileSystemService) {
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
@@ -537,6 +551,13 @@ final class FileBrowserViewModel: ObservableObject {
         }
     }
 
+    func moveItems(_ urls: [URL], to destinationFolder: URL) {
+        let dest = destinationFolder.standardizedFileURL
+        let sources = urls.map(\.standardizedFileURL).filter { $0.deletingLastPathComponent() != dest }
+        guard !sources.isEmpty else { return }
+        beginConflictResolution(sources: sources, to: dest, operation: .move(shouldClearCut: false))
+    }
+
     func moveSelectedToTrash() async {
         let itemsToTrash = selectedItems.filter { !$0.isNetworkLocation }
         guard !itemsToTrash.isEmpty else {
@@ -597,114 +618,140 @@ final class FileBrowserViewModel: ObservableObject {
         SystemActions.copyFileURLs(copiedURLs)
     }
 
-    func pasteItems(maximumConcurrentCopies: Int) async {
+    func pasteItems(maximumConcurrentCopies: Int) {
         if !cutItemURLs.isEmpty {
-            await pasteCutItems()
+            pasteCutItems()
             return
         }
-
-        pasteCopiedItems(maximumConcurrentCopies: maximumConcurrentCopies, conflictResolution: .cancel)
+        pasteCopiedItems(maximumConcurrentCopies: maximumConcurrentCopies)
     }
 
-    func pasteCutItems() async {
-        guard !cutItemURLs.isEmpty else {
-            return
-        }
-
-        do {
-            let movedURLs = try await fileSystem.moveItems(cutItemURLs, to: currentURL)
-            clearCutItems(containing: cutItemURLs)
-            await reload(selecting: movedURLs.first)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+    func pasteCutItems() {
+        guard !cutItemURLs.isEmpty, currentURL.isFileURL else { return }
+        let dest = currentURL.standardizedFileURL
+        let sources = cutItemURLs.filter { $0.deletingLastPathComponent() != dest }
+        guard !sources.isEmpty else { return }
+        beginConflictResolution(sources: sources, to: dest, operation: .move(shouldClearCut: true))
     }
 
-    func pasteCopiedItems(maximumConcurrentCopies: Int, conflictResolution: CopyConflictResolution) {
-        guard currentURL.isFileURL else {
-            return
-        }
-
+    func pasteCopiedItems(maximumConcurrentCopies: Int) {
+        guard currentURL.isFileURL else { return }
         let copiedSources = copiedItemURLs.isEmpty ? SystemActions.fileURLsFromPasteboard() : copiedItemURLs
-        guard !copiedSources.isEmpty else {
-            return
-        }
-
-        let destinationDirectory = currentURL.standardizedFileURL
-        let sources = copiedSources.filter { source in
-            source.standardizedFileURL.deletingLastPathComponent() != destinationDirectory
-        }
-
-        guard !sources.isEmpty else {
-            return
-        }
-
-        let conflicts = sources.compactMap { source -> String? in
-            let destination = destinationDirectory.appendingPathComponent(source.lastPathComponent)
-            return FileManager.default.fileExists(atPath: destination.path) ? destination.lastPathComponent : nil
-        }
-
-        if !conflicts.isEmpty, conflictResolution == .cancel {
-            copyConflictRequest = CopyConflictRequest(
-                sources: sources,
-                destinationDirectory: destinationDirectory,
-                conflictingNames: conflicts
-            )
-            return
-        }
-
-        copyConflictRequest = nil
-        let enqueueResolution: CopyConflictResolution = conflictResolution == .cancel ? .skip : conflictResolution
-        copyQueue.maximumConcurrentCopies = maximumConcurrentCopies
-        copyQueue.enqueue(sources, to: destinationDirectory, conflictResolution: enqueueResolution)
+        guard !copiedSources.isEmpty else { return }
+        let dest = currentURL.standardizedFileURL
+        let sources = copiedSources.filter { $0.standardizedFileURL.deletingLastPathComponent() != dest }
+        guard !sources.isEmpty else { return }
+        beginConflictResolution(sources: sources, to: dest, operation: .copy(maximumConcurrentCopies: maximumConcurrentCopies))
     }
 
-    func resolveCopyConflict(_ resolution: CopyConflictResolution, maximumConcurrentCopies: Int) {
-        guard let request = copyConflictRequest else {
-            return
-        }
-
+    func resolveCopyConflict(_ resolution: CopyConflictResolution) {
+        guard var session = conflictSession else { return }
         copyConflictRequest = nil
-        guard resolution != .cancel else {
+
+        switch resolution {
+        case .cancel:
+            conflictSession = nil
             return
+        case .overwrite:
+            if let idx = session.remainingConflictIndices.first {
+                session.approvedItems.append((session.allSources[idx], true))
+                session.remainingConflictIndices.removeFirst()
+            }
+        case .overwriteAll:
+            for idx in session.remainingConflictIndices {
+                session.approvedItems.append((session.allSources[idx], true))
+            }
+            session.remainingConflictIndices = []
+        case .skip:
+            if !session.remainingConflictIndices.isEmpty {
+                session.remainingConflictIndices.removeFirst()
+            }
+        case .skipAll:
+            session.remainingConflictIndices = []
         }
 
-        copyQueue.maximumConcurrentCopies = maximumConcurrentCopies
-        copyQueue.enqueue(request.sources, to: request.destinationDirectory, conflictResolution: resolution)
+        conflictSession = session
+        showNextConflictOrExecute()
     }
 
     /// Copies items dropped from Finder or another tab into this folder. Reuses
     /// the same conflict flow as paste.
     func importItems(_ urls: [URL], maximumConcurrentCopies: Int) {
-        guard currentURL.isFileURL else {
-            return
-        }
+        guard currentURL.isFileURL else { return }
+        let dest = currentURL.standardizedFileURL
+        let sources = urls.map(\.standardizedFileURL).filter { $0.deletingLastPathComponent() != dest }
+        guard !sources.isEmpty else { return }
+        beginConflictResolution(sources: sources, to: dest, operation: .copy(maximumConcurrentCopies: maximumConcurrentCopies))
+    }
 
-        let destinationDirectory = currentURL.standardizedFileURL
-        let sources = urls
-            .map(\.standardizedFileURL)
-            .filter { $0.deletingLastPathComponent() != destinationDirectory }
+    private func beginConflictResolution(sources: [URL], to destinationDirectory: URL, operation: ConflictSession.Operation) {
+        var approved: [(source: URL, shouldOverwrite: Bool)] = []
+        var conflictIndices: [Int] = []
 
-        guard !sources.isEmpty else {
-            return
-        }
-
-        let conflicts = sources.compactMap { source -> String? in
+        for (i, source) in sources.enumerated() {
             let destination = destinationDirectory.appendingPathComponent(source.lastPathComponent)
-            return FileManager.default.fileExists(atPath: destination.path) ? destination.lastPathComponent : nil
+            if FileManager.default.fileExists(atPath: destination.path) {
+                conflictIndices.append(i)
+            } else {
+                approved.append((source, false))
+            }
         }
 
-        if !conflicts.isEmpty {
-            copyConflictRequest = CopyConflictRequest(
-                sources: sources,
-                destinationDirectory: destinationDirectory,
-                conflictingNames: conflicts
-            )
+        conflictSession = ConflictSession(
+            allSources: sources,
+            destinationDirectory: destinationDirectory,
+            operation: operation,
+            approvedItems: approved,
+            remainingConflictIndices: conflictIndices,
+            totalConflicts: conflictIndices.count
+        )
+
+        showNextConflictOrExecute()
+    }
+
+    private func showNextConflictOrExecute() {
+        guard let session = conflictSession else { return }
+
+        guard let firstRemainingIdx = session.remainingConflictIndices.first else {
+            copyConflictRequest = nil
+            executeConflictSession()
             return
         }
 
-        copyQueue.maximumConcurrentCopies = maximumConcurrentCopies
-        copyQueue.enqueue(sources, to: destinationDirectory, conflictResolution: .skip)
+        let conflictNumber = session.totalConflicts - session.remainingConflictIndices.count + 1
+        copyConflictRequest = CopyConflictRequest(
+            conflictingName: session.allSources[firstRemainingIdx].lastPathComponent,
+            conflictNumber: conflictNumber,
+            totalConflicts: session.totalConflicts
+        )
+    }
+
+    private func executeConflictSession() {
+        guard let session = conflictSession else { return }
+        conflictSession = nil
+        guard !session.approvedItems.isEmpty else { return }
+
+        switch session.operation {
+        case .copy(let maximumConcurrentCopies):
+            copyQueue.maximumConcurrentCopies = maximumConcurrentCopies
+            copyQueue.enqueue(session.approvedItems, to: session.destinationDirectory)
+
+        case .move(let shouldClearCut):
+            let approvedItems = session.approvedItems
+            let destinationDirectory = session.destinationDirectory
+            let allSources = session.allSources
+            Task {
+                do {
+                    let movedURLs = try await fileSystem.moveItems(approvedItems, to: destinationDirectory)
+                    if shouldClearCut {
+                        clearCutItems(containing: allSources)
+                    }
+                    await reload(selecting: movedURLs.first)
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
     }
 
     /// Reorders a pinned favorite so it lands ahead of `targetURL`. Built-in

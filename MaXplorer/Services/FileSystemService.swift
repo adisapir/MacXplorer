@@ -18,9 +18,15 @@ protocol FileSystemService: Sendable {
     func listDirectory(at url: URL, showHiddenFiles: Bool, options: DirectoryListingOptions) async throws -> [FileItem]
     func createFolder(named name: String, in directory: URL) async throws -> URL
     func renameItem(at url: URL, to newName: String) async throws -> URL
-    func moveItems(_ urls: [URL], to directory: URL) async throws -> [URL]
+    func moveItems(_ resolvedItems: [(source: URL, shouldOverwrite: Bool)], to directory: URL) async throws -> [URL]
     func moveToTrash(_ url: URL) async throws
     func quickViewContent(for url: URL, maximumBytes: Int) async throws -> QuickViewContent
+}
+
+extension FileSystemService {
+    func moveItems(_ urls: [URL], to directory: URL) async throws -> [URL] {
+        try await moveItems(urls.map { ($0, false) }, to: directory)
+    }
 }
 
 struct LocalFileSystemService: FileSystemService {
@@ -112,12 +118,12 @@ struct LocalFileSystemService: FileSystemService {
         }.value
     }
 
-    func moveItems(_ urls: [URL], to directory: URL) async throws -> [URL] {
+    func moveItems(_ resolvedItems: [(source: URL, shouldOverwrite: Bool)], to directory: URL) async throws -> [URL] {
         try await Task.detached(priority: .userInitiated) {
             let destinationDirectory = directory.standardizedFileURL
             var moves: [(source: URL, destination: URL)] = []
 
-            for url in urls {
+            for (url, shouldOverwrite) in resolvedItems {
                 let source = url.standardizedFileURL
                 let destination = destinationDirectory.appendingPathComponent(source.lastPathComponent)
 
@@ -125,8 +131,13 @@ struct LocalFileSystemService: FileSystemService {
                     continue
                 }
 
-                guard !FileManager.default.fileExists(atPath: destination.path) else {
+                let destinationExists = FileManager.default.fileExists(atPath: destination.path)
+                guard !destinationExists || shouldOverwrite else {
                     throw FileSystemError.itemAlreadyExists(destination.lastPathComponent)
+                }
+
+                if destinationExists {
+                    try FileManager.default.removeItem(at: destination)
                 }
 
                 moves.append((source, destination))

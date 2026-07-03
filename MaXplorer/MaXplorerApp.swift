@@ -111,9 +111,7 @@ struct MaXplorerApp: App {
                 .disabled(!model.canCutSelectedItem)
 
                 Button("Paste") {
-                    Task {
-                        await model.pasteItems(maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
-                    }
+                    model.pasteItems(maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
                 }
                 .keyboardShortcut("v", modifiers: .command)
 

@@ -1,3 +1,6 @@
 Todo:
 - integrated shell
+- Search & Select (e.g. *.jpg)
+
+Done:
 - copy/move overwrite/skip/cancel

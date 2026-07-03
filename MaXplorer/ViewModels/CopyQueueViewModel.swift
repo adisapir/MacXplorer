@@ -3,7 +3,9 @@ import Combine
 
 enum CopyConflictResolution {
     case overwrite
+    case overwriteAll
     case skip
+    case skipAll
     case cancel
 }
 
@@ -82,6 +84,8 @@ final class CopyQueueViewModel: ObservableObject {
         }
 
         let destinationDirectory = destinationDirectory.standardizedFileURL
+        let shouldSkip = conflictResolution == .skip || conflictResolution == .skipAll
+        let shouldOverwrite = conflictResolution == .overwrite || conflictResolution == .overwriteAll
         let newItems = sources.compactMap { sourceURL -> CopyQueueItem? in
             let source = sourceURL.standardizedFileURL
             guard source.deletingLastPathComponent() != destinationDirectory else {
@@ -90,7 +94,7 @@ final class CopyQueueViewModel: ObservableObject {
 
             let destination = destinationDirectory.appendingPathComponent(source.lastPathComponent)
             let destinationExists = FileManager.default.fileExists(atPath: destination.path)
-            if destinationExists, conflictResolution == .skip {
+            if destinationExists, shouldSkip {
                 return nil
             }
 
@@ -99,7 +103,37 @@ final class CopyQueueViewModel: ObservableObject {
                 sourceURL: source,
                 destinationURL: destination,
                 name: source.lastPathComponent,
-                shouldOverwrite: destinationExists && conflictResolution == .overwrite,
+                shouldOverwrite: destinationExists && shouldOverwrite,
+                state: .pending,
+                totalBytes: 0,
+                copiedBytes: 0,
+                bytesPerSecond: 0,
+                startedAt: nil
+            )
+        }
+
+        guard !newItems.isEmpty else {
+            return
+        }
+
+        items.append(contentsOf: newItems)
+        startAvailableCopies()
+    }
+
+    func enqueue(_ resolvedItems: [(source: URL, shouldOverwrite: Bool)], to destinationDirectory: URL) {
+        let destinationDirectory = destinationDirectory.standardizedFileURL
+        let newItems = resolvedItems.compactMap { (sourceURL, shouldOverwrite) -> CopyQueueItem? in
+            let source = sourceURL.standardizedFileURL
+            guard source.deletingLastPathComponent() != destinationDirectory else {
+                return nil
+            }
+            let destination = destinationDirectory.appendingPathComponent(source.lastPathComponent)
+            return CopyQueueItem(
+                id: UUID(),
+                sourceURL: source,
+                destinationURL: destination,
+                name: source.lastPathComponent,
+                shouldOverwrite: shouldOverwrite,
                 state: .pending,
                 totalBytes: 0,
                 copiedBytes: 0,

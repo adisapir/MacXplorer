@@ -116,23 +116,35 @@ private struct ActiveBrowserView: View {
             manualFolderError = nil
         }
         .confirmationDialog(
-            "Items already exist at the destination",
+            copyConflictTitle,
             isPresented: Binding(
                 get: { model.copyConflictRequest != nil },
                 set: { if !$0 { model.copyConflictRequest = nil } }
             ),
             titleVisibility: .visible
         ) {
-            Button("Overwrite") {
-                model.resolveCopyConflict(.overwrite, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+            Button("Overwrite", role: .destructive) {
+                model.resolveCopyConflict(.overwrite)
+            }
+
+            if model.copyConflictRequest?.totalConflicts ?? 0 > 1 {
+                Button("Overwrite All", role: .destructive) {
+                    model.resolveCopyConflict(.overwriteAll)
+                }
             }
 
             Button("Skip") {
-                model.resolveCopyConflict(.skip, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+                model.resolveCopyConflict(.skip)
             }
 
-            Button("Cancel operation", role: .cancel) {
-                model.resolveCopyConflict(.cancel, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+            if model.copyConflictRequest?.totalConflicts ?? 0 > 1 {
+                Button("Skip All") {
+                    model.resolveCopyConflict(.skipAll)
+                }
+            }
+
+            Button("Cancel", role: .cancel) {
+                model.resolveCopyConflict(.cancel)
             }
         } message: {
             Text(copyConflictMessage)
@@ -192,17 +204,17 @@ private struct ActiveBrowserView: View {
         .environmentObject(model)
     }
 
+    private var copyConflictTitle: String {
+        guard let request = model.copyConflictRequest else { return "" }
+        return "\"\(request.conflictingName)\" already exists at the destination"
+    }
+
     private var copyConflictMessage: String {
-        guard let request = model.copyConflictRequest else {
-            return ""
+        guard let request = model.copyConflictRequest else { return "" }
+        if request.totalConflicts > 1 {
+            return "Conflict \(request.conflictNumber) of \(request.totalConflicts)"
         }
-
-        let visibleNames = request.conflictingNames.prefix(3).joined(separator: ", ")
-        if request.conflictingNames.count > 3 {
-            return "\(visibleNames), and \(request.conflictingNames.count - 3) more already exist."
-        }
-
-        return "\(visibleNames) already exist."
+        return "An item with this name already exists. Choose how to handle the conflict."
     }
 }
 
@@ -420,7 +432,7 @@ private struct BrowserTabButton: View {
     private func scheduleSpringLoad() {
         springLoadTask?.cancel()
         springLoadTask = Task {
-            try? await Task.sleep(nanoseconds: 900_000_000)
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else {
                 return
             }
@@ -1224,6 +1236,7 @@ private struct FileTableView: View {
     @Binding var renameText: String
     @Binding var itemsPendingTrash: [FileItem]
     @State private var isDropTargeted = false
+    @State private var folderDropTargetID: FileItem.ID?
 
     private var columns: Set<FileColumn> { settings.visibleColumns }
 
@@ -1234,18 +1247,7 @@ private struct FileTableView: View {
                 set: { model.selectedItemIDs = $0 }
             ), sortOrder: $model.sortOrder) {
                 TableColumn("Name", value: \.name) { item in
-                    HStack(spacing: 8) {
-                        FileItemIcon(item: item)
-
-                        Text(item.name)
-                            .lineLimit(1)
-
-                        Spacer(minLength: 0)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .opacity(model.isCut(item) ? 0.45 : 1)
-                    .overlay { rowClickTarget(for: item) }
-                    .draggable(item.url)
+                    nameCell(for: item)
                 }
                 .width(min: 220, ideal: 320)
 
@@ -1496,6 +1498,42 @@ private struct FileTableView: View {
         }
 
         return "This folder is empty or unavailable."
+    }
+
+    @ViewBuilder
+    private func nameCell(for item: FileItem) -> some View {
+        let isFolderTarget = folderDropTargetID == item.id
+        HStack(spacing: 8) {
+            FileItemIcon(item: item)
+            Text(item.name).lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(model.isCut(item) ? 0.45 : 1)
+        .background(
+            isFolderTarget ? Color.accentColor.opacity(0.18) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 4)
+        )
+        .overlay { rowClickTarget(for: item) }
+        .draggable(item.url)
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let dest = item.navigationURL else { return false }
+            model.moveItems(urlsExpandingSelection(urls), to: dest)
+            return true
+        } isTargeted: { targeted in
+            folderDropTargetID = (targeted && item.navigationURL != nil) ? item.id : nil
+        }
+    }
+
+    /// If the dragged URL is one of the currently selected items, return all
+    /// selected URLs so a multi-selection drag moves everything at once.
+    private func urlsExpandingSelection(_ droppedURLs: [URL]) -> [URL] {
+        let droppedStd = Set(droppedURLs.map(\.standardizedFileURL))
+        let selectedURLs = model.displayedItems
+            .filter { model.selectedItemIDs.contains($0.id) }
+            .map(\.url)
+        let selectedStd = Set(selectedURLs.map(\.standardizedFileURL))
+        return droppedStd.isDisjoint(with: selectedStd) ? droppedURLs : selectedURLs
     }
 
     private func rowClickTarget(for item: FileItem) -> some View {
