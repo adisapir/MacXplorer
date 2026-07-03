@@ -1,6 +1,7 @@
 Todo:
 - integrated shell
 - Search & Select (e.g. *.jpg)
+- long press to rename
 
 Done:
 - copy/move overwrite/skip/cancel

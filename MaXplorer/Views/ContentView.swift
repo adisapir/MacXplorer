@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject private var tabs: BrowserTabsViewModel
@@ -7,7 +8,6 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             BrowserTabStrip()
-
             ActiveBrowserView(model: tabs.activeModel)
                 .id(tabs.activeTab.id)
                 .environmentObject(tabs.activeModel)
@@ -17,6 +17,7 @@ struct ContentView: View {
 
 private struct ActiveBrowserView: View {
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var tabs: BrowserTabsViewModel
     @ObservedObject var model: FileBrowserViewModel
     @State private var renameItem: FileItem?
     @State private var renameText = ""
@@ -38,22 +39,28 @@ private struct ActiveBrowserView: View {
             case .settings:
                 SettingsSurface()
             case .files:
-                VStack(spacing: 0) {
-                    BrowserToolbar()
-                    FileTableView(
-                        renameItem: $renameItem,
-                        renameText: $renameText,
-                        itemsPendingTrash: $itemsPendingTrash
-                    )
-                    StatusBar()
-                }
-                .onKeyPress(.delete) {
-                    guard model.canGoBack else {
-                        return .ignored
+                if tabs.isSpaceAnalyzerActive {
+                    SpaceAnalyzerView()
+                        .environmentObject(tabs.spaceAnalyzerViewModel)
+                        .environmentObject(tabs)
+                } else {
+                    VStack(spacing: 0) {
+                        BrowserToolbar()
+                        FileTableView(
+                            renameItem: $renameItem,
+                            renameText: $renameText,
+                            itemsPendingTrash: $itemsPendingTrash
+                        )
+                        StatusBar()
                     }
+                    .onKeyPress(.delete) {
+                        guard model.canGoBack else {
+                            return .ignored
+                        }
 
-                    model.goBack()
-                    return .handled
+                        model.goBack()
+                        return .handled
+                    }
                 }
             }
         }
@@ -284,49 +291,63 @@ private struct BrowserTabStrip: View {
 
             HStack(spacing: tabSpacing) {
                 ForEach(tabs.tabs) { tab in
-                    BrowserTabButton(
-                        model: tab.model,
-                        isSelected: tab.id == tabs.selectedTabID,
-                        width: tabWidth,
-                        tabID: tab.id,
-                        onSelect: { tabs.selectTab(tab.id) },
-                        onReorder: { draggedID in tabs.moveTab(draggedID, before: tab.id) },
-                        onDropFiles: { droppedURLs in
-                            // Expand a single dragged URL to the full selection of whatever
-                            // tab the drag originated from. Mirrors urlsExpandingSelection()
-                            // used by folder-row drops.
-                            let droppedStd = Set(droppedURLs.map(\.standardizedFileURL))
-                            let expanded: [URL] = tabs.tabs.first(where: { t in
-                                let selStd = Set(
+                    if tab.id == tabs.spaceAnalyzerTabID {
+                        SpaceAnalyzerTabButton(
+                            isSelected: tab.id == tabs.selectedTabID,
+                            isScanning: tabs.spaceAnalyzerViewModel.isScanning,
+                            width: tabWidth,
+                            tabID: tab.id,
+                            onSelect: { tabs.selectTab(tab.id) },
+                            onReorder: { draggedID in tabs.moveTab(draggedID, before: tab.id) }
+                        )
+                        .contextMenu {
+                            Button("Close Space Analyzer") { tabs.closeSpaceAnalyzer() }
+                        }
+                    } else {
+                        BrowserTabButton(
+                            model: tab.model,
+                            isSelected: tab.id == tabs.selectedTabID,
+                            width: tabWidth,
+                            tabID: tab.id,
+                            onSelect: { tabs.selectTab(tab.id) },
+                            onReorder: { draggedID in tabs.moveTab(draggedID, before: tab.id) },
+                            onDropFiles: { droppedURLs in
+                                // Expand a single dragged URL to the full selection of whatever
+                                // tab the drag originated from. Mirrors urlsExpandingSelection()
+                                // used by folder-row drops.
+                                let droppedStd = Set(droppedURLs.map(\.standardizedFileURL))
+                                let expanded: [URL] = tabs.tabs.first(where: { t in
+                                    let selStd = Set(
+                                        t.model.displayedItems
+                                            .filter { t.model.selectedItemIDs.contains($0.id) }
+                                            .map { $0.url.standardizedFileURL }
+                                    )
+                                    return !selStd.isDisjoint(with: droppedStd)
+                                }).map { t in
                                     t.model.displayedItems
                                         .filter { t.model.selectedItemIDs.contains($0.id) }
-                                        .map { $0.url.standardizedFileURL }
-                                )
-                                return !selStd.isDisjoint(with: droppedStd)
-                            }).map { t in
-                                t.model.displayedItems
-                                    .filter { t.model.selectedItemIDs.contains($0.id) }
-                                    .map(\.url)
-                            } ?? droppedURLs
+                                        .map(\.url)
+                                } ?? droppedURLs
 
-                            tabs.selectTab(tab.id)
-                            tab.model.importItems(expanded, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
-                        }
-                    )
-                    .contextMenu {
-                        Button("Duplicate Tab") {
-                            tabs.duplicateTab(tab.id)
-                        }
-                        .keyboardShortcut("d", modifiers: [.command, .shift])
+                                tabs.selectTab(tab.id)
+                                tab.model.importItems(expanded, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+                            }
+                        )
+                        .contextMenu {
+                            Button("Duplicate Tab") {
+                                tabs.duplicateTab(tab.id)
+                            }
+                            .keyboardShortcut("d", modifiers: [.command, .shift])
 
-                        Divider()
+                            Divider()
 
-                        Button("Sort by Name") {
-                            tabs.sortTabsByName()
-                        }
+                            Button("Sort by Name") {
+                                tabs.sortTabsByName()
+                            }
 
-                        Button("Close Duplicate Tabs") {
-                            tabs.closeDuplicateTabs()
+                            Button("Close Duplicate Tabs") {
+                                tabs.closeDuplicateTabs()
+                            }
                         }
                     }
                 }
@@ -509,15 +530,80 @@ private struct BrowserTabButton: View {
     }
 }
 
+private struct SpaceAnalyzerTabButton: View {
+    let isSelected: Bool
+    let isScanning: Bool
+    let width: CGFloat
+    let tabID: UUID
+    let onSelect: () -> Void
+    let onReorder: (UUID) -> Void
+
+    @State private var isHovering = false
+    private let cornerRadius: CGFloat = 10
+    private let accentColor = Color.teal
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 6) {
+                if isScanning {
+                    ProgressView().controlSize(.mini).frame(width: 11, height: 11)
+                } else if width >= 62 {
+                    SpaceAnalyzerIcon(size: 11)
+                }
+                Text(isScanning ? "Scanning…" : "Space Analyzer")
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, max(7, min(11, width / 12)))
+            .frame(width: width, height: 26, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isSelected ? .primary : .secondary)
+        .background(tabBackground, in: RoundedRectangle(cornerRadius: cornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .stroke(borderStyle, lineWidth: isSelected ? 1 : 0.5)
+        }
+        .shadow(color: isSelected ? .black.opacity(0.12) : .clear, radius: 3, y: 1)
+        .animation(.easeOut(duration: 0.13), value: isHovering)
+        .animation(.easeOut(duration: 0.13), value: isSelected)
+        .onHover { isHovering = $0 }
+        .draggable(tabID.uuidString)
+        .dropDestination(for: String.self) { ids, _ in
+            guard let identifier = ids.first, let uuid = UUID(uuidString: identifier) else { return false }
+            onReorder(uuid)
+            return true
+        }
+    }
+
+    private var tabBackground: AnyShapeStyle {
+        if isSelected { return AnyShapeStyle(accentColor.opacity(0.18)) }
+        if isHovering { return AnyShapeStyle(accentColor.opacity(0.09)) }
+        return AnyShapeStyle(Color.clear)
+    }
+
+    private var borderStyle: AnyShapeStyle {
+        isSelected ? AnyShapeStyle(accentColor.opacity(0.5)) : AnyShapeStyle(Color.clear)
+    }
+}
+
 private struct SidebarView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
+    @EnvironmentObject private var tabs: BrowserTabsViewModel
+    @AppStorage("sidebar.favoritesExpanded") private var favoritesExpanded = true
+    @AppStorage("sidebar.networkExpanded") private var networkExpanded = true
     private let copyQueueSelectionID = "maxplorer://copy-queue"
     private let settingsSelectionID = "maxplorer://settings"
     private let aboutSelectionID = "maxplorer://about"
+    private let spaceAnalyzerSelectionID = "maxplorer://space-analyzer"
 
     var body: some View {
         List(selection: Binding(
             get: {
+                if tabs.isSpaceAnalyzerActive { return spaceAnalyzerSelectionID }
                 switch model.detailDestination {
                 case .copyQueue: return copyQueueSelectionID
                 case .settings: return settingsSelectionID
@@ -531,6 +617,8 @@ private struct SidebarView: View {
                 }
 
                 switch selection {
+                case spaceAnalyzerSelectionID:
+                    tabs.openSpaceAnalyzer()
                 case copyQueueSelectionID:
                     model.showCopyQueue()
                 case settingsSelectionID:
@@ -544,12 +632,18 @@ private struct SidebarView: View {
                 }
             }
         )) {
-            Section(SidebarLocation.Group.favorites.rawValue) {
+            Section(isExpanded: $favoritesExpanded) {
                 ForEach(model.sidebarLocations.filter { $0.group == .favorites }) { location in
                     Label(location.name, systemImage: location.systemImage)
                         .sidebarHover()
                         .tag(location.url.absoluteString)
                         .contextMenu {
+                            if location.url.isFileURL {
+                                Button("Analyze Space under Selected Folder") {
+                                    tabs.openSpaceAnalyzer(url: location.url)
+                                }
+                                Divider()
+                            }
                             if location.canRemoveFromFavorites {
                                 Button("Remove from Favorites") {
                                     model.removeFavorite(location.url)
@@ -561,6 +655,8 @@ private struct SidebarView: View {
                             _ = handleFavoriteDrop(urls, before: location)
                         }
                 }
+            } header: {
+                Text(SidebarLocation.Group.favorites.rawValue)
             }
             .dropDestination(for: URL.self) { urls, _ in
                 _ = model.pinDroppedFavorites(urls)
@@ -571,10 +667,17 @@ private struct SidebarView: View {
                     Label(location.name, systemImage: location.systemImage)
                         .sidebarHover()
                         .tag(location.url.absoluteString)
+                        .contextMenu {
+                            if location.url.isFileURL {
+                                Button("Analyze Space under Selected Folder") {
+                                    tabs.openSpaceAnalyzer(url: location.url)
+                                }
+                            }
+                        }
                 }
             }
 
-            Section(SidebarLocation.Group.network.rawValue) {
+            Section(isExpanded: $networkExpanded) {
                 Button {
                     model.showConnectToServer()
                 } label: {
@@ -587,6 +690,22 @@ private struct SidebarView: View {
                         .sidebarHover()
                         .tag(location.url.absoluteString)
                 }
+            } header: {
+                Text(SidebarLocation.Group.network.rawValue)
+            }
+
+            Section("Disk") {
+                Button {
+                    tabs.openSpaceAnalyzer()
+                } label: {
+                    HStack(spacing: 6) {
+                        SpaceAnalyzerIcon(size: 15)
+                        Text("Space Analyzer")
+                    }
+                }
+                .buttonStyle(.plain)
+                .sidebarHover()
+                .tag(spaceAnalyzerSelectionID)
             }
 
             Section("Copy Queue") {
@@ -734,6 +853,18 @@ private struct BrowserToolbar: View {
                     ) {
                         model.showConnectToServer()
                     }
+                }
+
+                ToolbarButtonGroup {
+                    Button {
+                        tabs.openSpaceAnalyzer(url: model.currentURL.isFileURL ? model.currentURL : nil)
+                    } label: {
+                        SpaceAnalyzerIcon(size: 14)
+                            .frame(width: 26, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .modernTooltip("Analyze disk space usage")
                 }
 
                 ToolbarButtonGroup {
@@ -1070,6 +1201,7 @@ private struct ToolbarToggleButton: View {
 
 private struct ModernTooltipModifier: ViewModifier {
     let text: String
+    var usesCursorPosition: Bool = false
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovering = false
     @State private var isPresented = false
@@ -1099,7 +1231,12 @@ private struct ModernTooltipModifier: ViewModifier {
                 }
             }
             .background(
-                TooltipAnchorView(text: text, isPresented: isPresented, colorScheme: colorScheme)
+                TooltipAnchorView(
+                    text: text,
+                    isPresented: isPresented,
+                    colorScheme: colorScheme,
+                    usesCursorPosition: usesCursorPosition
+                )
             )
     }
 }
@@ -1108,13 +1245,15 @@ private struct TooltipAnchorView: NSViewRepresentable {
     let text: String
     let isPresented: Bool
     let colorScheme: ColorScheme
+    var usesCursorPosition: Bool = false
 
     func makeNSView(context: Context) -> TooltipAnchorNSView {
         TooltipAnchorNSView()
     }
 
     func updateNSView(_ nsView: TooltipAnchorNSView, context: Context) {
-        nsView.update(text: text, isPresented: isPresented, colorScheme: colorScheme)
+        nsView.update(text: text, isPresented: isPresented, colorScheme: colorScheme,
+                      usesCursorPosition: usesCursorPosition)
     }
 }
 
@@ -1122,16 +1261,18 @@ private final class TooltipAnchorNSView: NSView {
     private var text = ""
     private var isPresented = false
     private var colorScheme: ColorScheme = .light
+    private var usesCursorPosition = false
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateTooltipVisibility()
     }
 
-    func update(text: String, isPresented: Bool, colorScheme: ColorScheme) {
+    func update(text: String, isPresented: Bool, colorScheme: ColorScheme, usesCursorPosition: Bool) {
         self.text = text
         self.isPresented = isPresented
         self.colorScheme = colorScheme
+        self.usesCursorPosition = usesCursorPosition
         updateTooltipVisibility()
     }
 
@@ -1141,7 +1282,8 @@ private final class TooltipAnchorNSView: NSView {
             return
         }
 
-        TooltipWindowPresenter.shared.show(text: text, anchor: self, colorScheme: colorScheme)
+        TooltipWindowPresenter.shared.show(text: text, anchor: self, colorScheme: colorScheme,
+                                           usesCursorPosition: usesCursorPosition)
     }
 }
 
@@ -1151,8 +1293,31 @@ private final class TooltipWindowPresenter {
 
     private var panel: NSPanel?
     private weak var currentAnchor: NSView?
+    // Set when a right-click dismisses the tooltip. Blocks re-presentation
+    // (SwiftUI's isPresented is still true, so updateNSView would otherwise call
+    // show() again right on top of the context menu) until the pointer leaves the
+    // anchor and a fresh hover begins.
+    private var isSuppressed = false
 
-    func show(text: String, anchor: NSView, colorScheme: ColorScheme) {
+    private init() {
+        // A right-click opens a context menu; dismiss any visible tooltip first
+        // so the two don't overlap. The panel ignores mouse events, so we watch
+        // the event stream globally rather than hit-testing the panel itself.
+        NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+            self?.dismiss()
+            return event
+        }
+    }
+
+    /// Force-hides the current tooltip and suppresses re-presentation.
+    func dismiss() {
+        panel?.orderOut(nil)
+        currentAnchor = nil
+        isSuppressed = true
+    }
+
+    func show(text: String, anchor: NSView, colorScheme: ColorScheme, usesCursorPosition: Bool = false) {
+        guard !isSuppressed else { return }
         currentAnchor = anchor
 
         let rootView = TooltipBubble(text: text)
@@ -1163,12 +1328,25 @@ private final class TooltipWindowPresenter {
         let panel = panel ?? makePanel()
         panel.contentView = hostingView
 
-        let screenFrame = anchor.window?.convertToScreen(anchor.convert(anchor.bounds, to: nil)) ?? .zero
         let panelSize = hostingView.fittingSize
-        let origin = NSPoint(
-            x: screenFrame.midX - (panelSize.width / 2),
-            y: screenFrame.maxY + 8
-        )
+        let origin: NSPoint
+        if usesCursorPosition {
+            let cursor = NSEvent.mouseLocation
+            let screenBounds = NSScreen.screens.first(where: { $0.frame.contains(cursor) })?.visibleFrame
+                ?? NSScreen.main?.visibleFrame ?? .zero
+            let rawX = cursor.x + 14
+            let rawY = cursor.y - panelSize.height - 10
+            origin = NSPoint(
+                x: min(rawX, screenBounds.maxX - panelSize.width - 4),
+                y: max(rawY, screenBounds.minY + 4)
+            )
+        } else {
+            let screenFrame = anchor.window?.convertToScreen(anchor.convert(anchor.bounds, to: nil)) ?? .zero
+            origin = NSPoint(
+                x: screenFrame.midX - (panelSize.width / 2),
+                y: screenFrame.maxY + 8
+            )
+        }
 
         panel.setFrame(NSRect(origin: origin, size: panelSize), display: true)
         panel.orderFrontRegardless()
@@ -1176,6 +1354,9 @@ private final class TooltipWindowPresenter {
     }
 
     func hide(anchor: NSView) {
+        // A hover-exit lifts the right-click suppression so later hovers work.
+        isSuppressed = false
+
         guard currentAnchor === anchor else {
             return
         }
@@ -1209,11 +1390,11 @@ private struct TooltipBubble: View {
         Text(text)
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(foregroundColor)
-            .lineLimit(2)
-            .multilineTextAlignment(.center)
+            .lineLimit(4)
+            .multilineTextAlignment(.leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .frame(maxWidth: 280)
+            .frame(maxWidth: 360)
             .background(backgroundColor, in: RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
@@ -1235,9 +1416,15 @@ private struct TooltipBubble: View {
     }
 }
 
-private extension View {
+extension View {
     func modernTooltip(_ text: String) -> some View {
         modifier(ModernTooltipModifier(text: text))
+    }
+
+    /// Like modernTooltip but positions the popup at the current cursor location
+    /// rather than above the anchor view — suited for large tiles and map surfaces.
+    func tileTooltip(_ text: String) -> some View {
+        modifier(ModernTooltipModifier(text: text, usesCursorPosition: true))
     }
 
     func sidebarHover() -> some View {
@@ -1273,6 +1460,7 @@ private struct SidebarHoverModifier: ViewModifier {
 private struct FileTableView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var tabs: BrowserTabsViewModel
     @Binding var renameItem: FileItem?
     @Binding var renameText: String
     @Binding var itemsPendingTrash: [FileItem]
@@ -1351,11 +1539,13 @@ private struct FileTableView: View {
                     model.selectedItemIDs = selection
                     model.openSelected()
                 }
+                .keyboardShortcut("o", modifiers: .command)
 
                 Button("Quick View") {
                     model.selectedItemIDs = selection
                     model.quickViewSelectedItem()
                 }
+                .keyboardShortcut(.space, modifiers: [])
                 .disabled(!canQuickView(selection: selection))
 
                 Menu("Open With") {
@@ -1379,22 +1569,26 @@ private struct FileTableView: View {
                     model.selectedItemIDs = selection
                     model.cutSelectedItems()
                 }
+                .keyboardShortcut("x", modifiers: .command)
                 .disabled(!canCut(selection: selection))
 
                 Button("Copy") {
                     model.selectedItemIDs = selection
                     model.copySelectedItems()
                 }
+                .keyboardShortcut("c", modifiers: .command)
                 .disabled(!canCut(selection: selection))
 
                 Button("Rename") {
                     startRename(selection: selection)
                 }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(!canEdit(selection: selection))
 
                 Button("Move to Trash", role: .destructive) {
                     startTrash(selection: selection)
                 }
+                .keyboardShortcut(.delete, modifiers: .command)
                 .disabled(!canTrash(selection: selection))
 
                 Divider()
@@ -1406,20 +1600,32 @@ private struct FileTableView: View {
 
                 Divider()
 
+                Button("Analyze Space under Selected Folder") {
+                    guard let id = selection.first,
+                          let item = model.items.first(where: { $0.id == id }),
+                          item.isDirectory else { return }
+                    model.selectedItemIDs = selection
+                    tabs.openSpaceAnalyzer(url: item.url)
+                }
+                .disabled(!canAnalyzeSpace(selection: selection))
+
                 Button("Copy Path") {
                     model.selectedItemIDs = selection
                     model.copySelectedPath()
                 }
+                .keyboardShortcut("c", modifiers: [.command, .option])
 
                 Button("Open in Terminal") {
                     model.selectedItemIDs = selection
                     model.openSelectedInTerminal()
                 }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
 
                 Button("Reveal in Finder") {
                     model.selectedItemIDs = selection
                     model.revealSelectedInFinder()
                 }
+                .keyboardShortcut("r", modifiers: [.command, .control])
             } primaryAction: { selection in
                 model.selectedItemIDs = selection
                 model.openSelected()
@@ -1529,6 +1735,12 @@ private struct FileTableView: View {
         }
     }
 
+    private func canAnalyzeSpace(selection: Set<FileItem.ID>) -> Bool {
+        guard selection.count == 1, let id = selection.first,
+              let item = model.items.first(where: { $0.id == id }) else { return false }
+        return item.isDirectory && !item.isNetworkLocation
+    }
+
     private var emptyDescription: String {
         if !model.filterText.isEmpty {
             return "The current-folder filter did not match loaded items."
@@ -1583,6 +1795,9 @@ private struct FileTableView: View {
         } onOpen: {
             model.selectedItemIDs = [item.id]
             model.openSelected()
+        } onLongPress: {
+            guard !item.isNetworkLocation else { return }
+            startRename(selection: [item.id])
         }
     }
 
@@ -1611,10 +1826,19 @@ private struct StatusBar: View {
 
             Spacer()
 
-            Text(model.currentLocationText)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            if let stats = model.volumeStats {
+                let freePercent = Int((Double(stats.free) / Double(stats.total) * 100).rounded())
+                HStack(spacing: 12) {
+                    Label(
+                        "Used: \(ByteCountFormatter.string(fromByteCount: Int64(stats.used), countStyle: .file))",
+                        systemImage: "internaldrive"
+                    )
+                    Text("Free: \(ByteCountFormatter.string(fromByteCount: Int64(stats.free), countStyle: .file)) (\(freePercent)%)")
+                        .foregroundStyle(freePercent < 10 ? .red : .secondary)
+                }
                 .foregroundStyle(.secondary)
+                .monospacedDigit()
+            }
         }
         .font(.footnote)
         .padding(.horizontal, 12)
@@ -1626,23 +1850,29 @@ private struct StatusBar: View {
 private struct TableCellClickTarget: NSViewRepresentable {
     let onSelect: (SelectionMode) -> Void
     let onOpen: () -> Void
+    let onLongPress: () -> Void
 
     func makeNSView(context: Context) -> TableCellClickTargetNSView {
         let view = TableCellClickTargetNSView()
         view.onSelect = onSelect
         view.onOpen = onOpen
+        view.onLongPress = onLongPress
         return view
     }
 
     func updateNSView(_ nsView: TableCellClickTargetNSView, context: Context) {
         nsView.onSelect = onSelect
         nsView.onOpen = onOpen
+        nsView.onLongPress = onLongPress
     }
 }
 
 private final class TableCellClickTargetNSView: NSView {
     var onSelect: (SelectionMode) -> Void = { _ in }
     var onOpen: () -> Void = {}
+    var onLongPress: () -> Void = {}
+
+    private var longPressTimer: Timer?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -1656,8 +1886,34 @@ private final class TableCellClickTargetNSView: NSView {
         }
 
         if event.clickCount >= 2 {
+            cancelLongPress()
             onOpen()
+        } else if event.modifierFlags.intersection([.shift, .command]).isEmpty {
+            scheduleLongPress()
         }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        cancelLongPress()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        cancelLongPress()
+    }
+
+    deinit { longPressTimer?.invalidate() }
+
+    private func scheduleLongPress() {
+        longPressTimer?.invalidate()
+        longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
+            self?.longPressTimer = nil
+            self?.onLongPress()
+        }
+    }
+
+    private func cancelLongPress() {
+        longPressTimer?.invalidate()
+        longPressTimer = nil
     }
 }
 
