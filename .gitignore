@@ -12,4 +12,6 @@ xcuserdata/
 .DS_Store
 
 # Distribution artifacts
-dist/
+# dist/
+dist/Maxplorer.xcarchive/*
+dist/Maxplorer.app/*
