@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000003 /* SwiftTerm */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		DDC3BB062FF5524A009477D7 /* MaXplorer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MaXplorer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000001 /* SwiftTerm in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -67,6 +72,7 @@
 			);
 			name = MaXplorer;
 			packageProductDependencies = (
+				A10000000000000000000003 /* SwiftTerm */,
 			);
 			productName = MaXplorer;
 			productReference = DDC3BB062FF5524A009477D7 /* MaXplorer.app */;
@@ -98,6 +104,9 @@
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = DDC3BB072FF5524A009477D7 /* Products */;
+			packageReferences = (
+				A10000000000000000000002 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -374,6 +383,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A10000000000000000000002 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.11.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A10000000000000000000003 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000002 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = DDC3BAFE2FF5524A009477D7 /* Project object */;
 }
