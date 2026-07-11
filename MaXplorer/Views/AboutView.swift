@@ -327,7 +327,7 @@ enum ReadmeLoader {
 }
 
 /// Popup sheet that renders the README with proper Markdown formatting.
-private struct ReadmeSheet: View {
+struct ReadmeSheet: View {
     let onClose: () -> Void
 
     private let markdown: String = ReadmeLoader.load()

@@ -13,7 +13,6 @@ struct DirectoryListingOptions: Equatable, Sendable {
         self.includeDateTaken = includeDateTaken
     }
 }
-
 protocol FileSystemService: Sendable {
     func listDirectory(at url: URL, showHiddenFiles: Bool, options: DirectoryListingOptions) async throws -> [FileItem]
     func createFolder(named name: String, in directory: URL) async throws -> URL
@@ -144,11 +143,52 @@ struct LocalFileSystemService: FileSystemService {
             }
 
             for move in moves {
-                try FileManager.default.moveItem(at: move.source, to: move.destination)
+                if try Self.requiresCopyForMove(from: move.source, to: destinationDirectory) {
+                    try Self.copyThenRemove(move.source, to: move.destination)
+                } else {
+                    do {
+                        try FileManager.default.moveItem(at: move.source, to: move.destination)
+                    } catch {
+                        guard Self.isCrossDeviceMoveError(error) else { throw error }
+                        try Self.copyThenRemove(move.source, to: move.destination)
+                    }
+                }
             }
 
             return moves.map(\.destination)
         }.value
+    }
+
+    nonisolated private static func requiresCopyForMove(from source: URL, to destinationDirectory: URL) throws -> Bool {
+        let sourceVolume = try source.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier
+        let destinationVolume = try destinationDirectory.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier
+        guard let sourceVolume, let destinationVolume else { return false }
+        guard let sourceObject = sourceVolume as? NSObject,
+              let destinationObject = destinationVolume as? NSObject else {
+            return String(describing: sourceVolume) != String(describing: destinationVolume)
+        }
+        return !sourceObject.isEqual(destinationObject)
+    }
+
+    nonisolated private static func isCrossDeviceMoveError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSPOSIXErrorDomain, nsError.code == Int(EXDEV) {
+            return true
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            return underlying.domain == NSPOSIXErrorDomain && underlying.code == Int(EXDEV)
+        }
+        return false
+    }
+
+    nonisolated private static func copyThenRemove(_ source: URL, to destination: URL) throws {
+        try FileManager.default.copyItem(at: source, to: destination)
+        do {
+            try FileManager.default.removeItem(at: source)
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            throw error
+        }
     }
 
     func moveToTrash(_ url: URL) async throws {
@@ -342,4 +382,3 @@ nonisolated private func uniqueURL(forFolderNamed name: String, in directory: UR
 
     return candidate
 }
-

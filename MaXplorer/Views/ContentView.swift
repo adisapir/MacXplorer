@@ -130,6 +130,11 @@ private struct ActiveBrowserView: View {
                 model.clearQuickView()
             }
         }
+        .sheet(isPresented: $model.isReadmePresented) {
+            ReadmeSheet {
+                model.isReadmePresented = false
+            }
+        }
         .onChange(of: model.isGoToFolderPresented) { _, isPresented in
             guard isPresented else {
                 return
@@ -1843,7 +1848,13 @@ private struct StatusBar: View {
                     .controlSize(.small)
                 Text("Loading")
             } else {
-                Text("\(model.displayedItems.count) of \(model.items.count) items")
+                if model.selectedItems.isEmpty {
+                    Text("\(model.displayedItems.count) of \(model.items.count) items")
+                } else if let selectedFileSize = model.selectedFileSize {
+                    Text("\(model.selectedItems.count) selected • \(ByteCountFormatter.string(fromByteCount: selectedFileSize, countStyle: .file))")
+                } else {
+                    Text("\(model.selectedItems.count) selected")
+                }
             }
 
             Spacer()

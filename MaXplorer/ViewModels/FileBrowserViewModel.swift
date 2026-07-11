@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Darwin
 
 enum SelectionMode {
     case single
@@ -57,6 +58,7 @@ final class FileBrowserViewModel: ObservableObject {
     }
     @Published var showAliases = true
     @Published var isIntegratedTerminalPresented = false
+    @Published var isReadmePresented = false
 
     let fileSystem: any FileSystemService
     let copyQueue = CopyQueueViewModel()
@@ -68,6 +70,8 @@ final class FileBrowserViewModel: ObservableObject {
     private var destinationBeforeAuxiliaryDetail: DetailDestination = .files
     private var listingOptions = DirectoryListingOptions()
     private var conflictSession: ConflictSession?
+    private var folderMonitor: DispatchSourceFileSystemObject?
+    private var monitorReloadTask: Task<Void, Never>?
 
     private struct ConflictSession {
         enum Operation {
@@ -102,8 +106,14 @@ final class FileBrowserViewModel: ObservableObject {
         // while SwiftUI is still instantiating this @StateObject during a view
         // update, which triggers "Publishing changes from within view updates".
         Task { @MainActor [weak self] in
+            self?.startMonitoringCurrentFolder()
             self?.reload()
         }
+    }
+
+    deinit {
+        monitorReloadTask?.cancel()
+        folderMonitor?.cancel()
     }
 
     var displayedItems: [FileItem] {
@@ -132,6 +142,14 @@ final class FileBrowserViewModel: ObservableObject {
 
     var selectedItems: [FileItem] {
         items.filter { selectedItemIDs.contains($0.id) }
+    }
+
+    var selectedFileSize: Int64? {
+        let fileSizes = selectedItems.compactMap { item in
+            item.isDirectory && !item.isPackage ? nil : item.size
+        }
+        guard !fileSizes.isEmpty else { return nil }
+        return fileSizes.reduce(0, +)
     }
 
     var canGoBack: Bool { !backStack.isEmpty }
@@ -318,7 +336,53 @@ final class FileBrowserViewModel: ObservableObject {
         currentURL = url
         pathText = url == Self.networkRootURL ? "Network" : url.path
         filterText = ""
+        startMonitoringCurrentFolder()
         reload()
+    }
+
+    func showReadme() {
+        isReadmePresented = true
+    }
+
+    private func startMonitoringCurrentFolder() {
+        stopMonitoringCurrentFolder()
+        guard currentURL.isFileURL else { return }
+
+        let descriptor = open(currentURL.path, O_EVTONLY)
+        guard descriptor >= 0 else { return }
+
+        let monitoredURL = currentURL.standardizedFileURL
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor,
+            eventMask: [.write, .delete, .rename, .attrib, .extend],
+            queue: .main
+        )
+        source.setEventHandler { [weak self, weak source] in
+            guard let self, self.currentURL.standardizedFileURL == monitoredURL else { return }
+            let event = source?.data ?? []
+            self.monitorReloadTask?.cancel()
+            self.monitorReloadTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled, let self else { return }
+                if event.contains(.delete) || event.contains(.rename) {
+                    self.startMonitoringCurrentFolder()
+                }
+                await self.reload(selecting: nil)
+            }
+        }
+        source.setCancelHandler {
+            close(descriptor)
+        }
+
+        folderMonitor = source
+        source.resume()
+    }
+
+    private func stopMonitoringCurrentFolder() {
+        monitorReloadTask?.cancel()
+        monitorReloadTask = nil
+        folderMonitor?.cancel()
+        folderMonitor = nil
     }
 
     func goBack() {

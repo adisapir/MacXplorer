@@ -226,6 +226,12 @@ struct MaXplorerApp: App {
                 }
                 .keyboardShortcut("c", modifiers: [.command, .option])
             }
+
+            CommandGroup(after: .help) {
+                Button("MaXplorer README") {
+                    model.showReadme()
+                }
+            }
         }
 
         Settings {
