@@ -27,43 +27,59 @@ private struct ActiveBrowserView: View {
     @State private var manualFolderError: String?
 
     var body: some View {
-        NavigationSplitView {
-            SidebarView()
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260)
-        } detail: {
-            switch model.detailDestination {
-            case .copyQueue:
-                CopyQueueView(queue: model.copyQueue)
-            case .about:
-                AboutView()
-            case .settings:
-                SettingsSurface()
-            case .files:
-                if tabs.isSpaceAnalyzerActive {
-                    SpaceAnalyzerView()
-                        .environmentObject(tabs.spaceAnalyzerViewModel)
-                        .environmentObject(tabs)
-                } else {
-                    VStack(spacing: 0) {
-                        BrowserToolbar()
-                        FileTableView(
-                            renameItem: $renameItem,
-                            renameText: $renameText,
-                            itemsPendingTrash: $itemsPendingTrash
-                        )
-                        StatusBar()
-                    }
-                    .onKeyPress(.delete) {
-                        guard model.canGoBack else {
-                            return .ignored
+        VSplitView {
+            NavigationSplitView {
+                SidebarView()
+                    .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+            } detail: {
+                switch model.detailDestination {
+                case .copyQueue:
+                    CopyQueueView(queue: model.copyQueue)
+                case .about:
+                    AboutView()
+                case .settings:
+                    SettingsSurface()
+                case .files:
+                    if tabs.isSpaceAnalyzerActive {
+                        SpaceAnalyzerView()
+                            .environmentObject(tabs.spaceAnalyzerViewModel)
+                            .environmentObject(tabs)
+                    } else {
+                        VStack(spacing: 0) {
+                            BrowserToolbar()
+                            FileTableView(
+                                renameItem: $renameItem,
+                                renameText: $renameText,
+                                itemsPendingTrash: $itemsPendingTrash
+                            )
+                            StatusBar()
                         }
+                        .onKeyPress(.delete) {
+                            guard model.canGoBack else {
+                                return .ignored
+                            }
 
-                        model.goBack()
-                        return .handled
+                            model.goBack()
+                            return .handled
+                        }
                     }
                 }
             }
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 300)
+            .layoutPriority(1)
+
+            if model.isIntegratedTerminalPresented,
+               model.currentURL.isFileURL,
+               model.detailDestination == .files,
+               !tabs.isSpaceAnalyzerActive {
+                IntegratedTerminalView(directoryURL: model.currentURL) {
+                    model.isIntegratedTerminalPresented = false
+                }
+                .id(model.currentURL)
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 180, idealHeight: 196)
+            }
         }
+        .frame(minWidth: 0, maxWidth: .infinity)
         .alert("MaXplorer", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.clearError() } }
@@ -837,6 +853,12 @@ private struct BrowserToolbar: View {
                     ) {
                         model.openCurrentFolderInTerminal()
                     }
+
+                    ToolbarToggleButton(
+                        systemName: "terminal.fill",
+                        help: model.isIntegratedTerminalPresented ? "Close integrated terminal (⌃` )" : "Open integrated terminal (⌃` )",
+                        isOn: $model.isIntegratedTerminalPresented
+                    )
 
                     ToolbarIconButton(
                         systemName: "arrow.up.forward.square",
@@ -2109,4 +2131,3 @@ private struct ManualFolderComboBox: NSViewRepresentable {
         }
     }
 }
-

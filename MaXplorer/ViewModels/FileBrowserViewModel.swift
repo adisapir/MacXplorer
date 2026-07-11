@@ -56,6 +56,7 @@ final class FileBrowserViewModel: ObservableObject {
         }
     }
     @Published var showAliases = true
+    @Published var isIntegratedTerminalPresented = false
 
     let fileSystem: any FileSystemService
     let copyQueue = CopyQueueViewModel()
@@ -1101,4 +1102,3 @@ final class FileBrowserViewModel: ObservableObject {
         return url
     }
 }
-

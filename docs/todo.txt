@@ -1,7 +1,9 @@
 Todo:
+- Alternative space explorer: root based folders breakdown, then for each: drill down mode
 - integrated shell
 - Search & Select (e.g. *.jpg)
 - long press to rename
+
 
 Done:
 - copy/move overwrite/skip/cancel

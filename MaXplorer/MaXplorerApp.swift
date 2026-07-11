@@ -207,6 +207,15 @@ struct MaXplorerApp: App {
             }
 
             CommandMenu("Tools") {
+                Toggle("Integrated Terminal", isOn: Binding(
+                    get: { model.isIntegratedTerminalPresented },
+                    set: { model.isIntegratedTerminalPresented = $0 }
+                ))
+                    .keyboardShortcut("`", modifiers: .control)
+                    .disabled(!model.currentURL.isFileURL)
+
+                Divider()
+
                 Button("Open in Terminal") {
                     model.openSelectedInTerminal()
                 }
