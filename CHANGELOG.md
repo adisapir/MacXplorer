@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-07-11
+
+- Added integrated terminal (in addition to standard new window terminal)
+
 ## 2026-07-03 (later) — v1.02
 
 - New **Space Analyzer** (disk storage map): a GrandPerspective-style treemap of everything under a chosen folder, opened from the sidebar, a toolbar button, a distinct coloured tab, or a folder's right-click menu. Only one analyzer tab exists at a time.
