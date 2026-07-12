@@ -183,10 +183,16 @@ final class FileBrowserViewModel: ObservableObject {
         guard currentURL.isFileURL else { return nil }
         let values = try? currentURL.resourceValues(forKeys: [
             .volumeTotalCapacityKey,
+            .volumeAvailableCapacityKey,
             .volumeAvailableCapacityForImportantUsageKey
         ])
-        guard let total = values?.volumeTotalCapacity, total > 0,
-              let free = values?.volumeAvailableCapacityForImportantUsage else { return nil }
+        let fileSystemAttributes = try? FileManager.default.attributesOfFileSystem(forPath: currentURL.path)
+        let total = values?.volumeTotalCapacity
+            ?? (fileSystemAttributes?[.systemSize] as? NSNumber)?.intValue
+        let free = values?.volumeAvailableCapacity
+            ?? values?.volumeAvailableCapacityForImportantUsage.map(Int.init)
+            ?? (fileSystemAttributes?[.systemFreeSize] as? NSNumber)?.intValue
+        guard let total, total > 0, let free, free >= 0 else { return nil }
         let totalBytes = UInt64(max(0, total))
         let freeBytes = min(UInt64(max(0, free)), totalBytes)
         return (totalBytes - freeBytes, freeBytes, totalBytes)

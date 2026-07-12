@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import SwiftTerm
 
 @main
 struct MaXplorerApp: App {
@@ -100,7 +101,11 @@ struct MaXplorerApp: App {
 
             CommandGroup(replacing: .pasteboard) {
                 Button("Copy") {
-                    model.copySelectedItem()
+                    if let terminal = focusedTerminal {
+                        terminal.copy(self)
+                    } else {
+                        model.copySelectedItem()
+                    }
                 }
                 .keyboardShortcut("c", modifiers: .command)
 
@@ -111,7 +116,11 @@ struct MaXplorerApp: App {
                 .disabled(!model.canCutSelectedItem)
 
                 Button("Paste") {
-                    model.pasteItems(maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+                    if let terminal = focusedTerminal {
+                        terminal.paste(self)
+                    } else {
+                        model.pasteItems(maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
+                    }
                 }
                 .keyboardShortcut("v", modifiers: .command)
 
@@ -239,5 +248,16 @@ struct MaXplorerApp: App {
                 .environmentObject(settings)
                 .preferredColorScheme(settings.appearance.colorScheme)
         }
+    }
+
+    private var focusedTerminal: TerminalView? {
+        var responder = NSApp.keyWindow?.firstResponder
+        while let current = responder {
+            if let terminal = current as? TerminalView {
+                return terminal
+            }
+            responder = current.nextResponder
+        }
+        return nil
     }
 }
