@@ -1,5 +1,14 @@
 # Change Log
 
+## 2026-07-12 — v1.04
+
+- Cut and paste now moves files reliably between local drives and mounted network volumes.
+- Added **MaXplorer README** to the Help menu.
+- The status bar shows the selected item count and total size of selected files, returning to the normal item count when the selection is cleared.
+- The current folder refreshes automatically when items are added, removed, renamed, or modified externally.
+- Mounted network volumes now report their available space correctly instead of showing zero bytes free.
+- The integrated terminal now supports the standard Command-C and Command-V clipboard shortcuts.
+
 ## 2026-07-11
 
 - Added integrated terminal (in addition to standard new window terminal)
