@@ -27,56 +27,23 @@ private struct ActiveBrowserView: View {
     @State private var manualFolderError: String?
 
     var body: some View {
-        VSplitView {
-            NavigationSplitView {
-                SidebarView()
-                    .navigationSplitViewColumnWidth(min: 220, ideal: 260)
-            } detail: {
-                switch model.detailDestination {
-                case .copyQueue:
-                    CopyQueueView(queue: model.copyQueue)
-                case .about:
-                    AboutView()
-                case .settings:
-                    SettingsSurface()
-                case .files:
-                    if tabs.isSpaceAnalyzerActive {
-                        SpaceAnalyzerView()
-                            .environmentObject(tabs.spaceAnalyzerViewModel)
-                            .environmentObject(tabs)
-                    } else {
-                        VStack(spacing: 0) {
-                            BrowserToolbar()
-                            FileTableView(
-                                renameItem: $renameItem,
-                                renameText: $renameText,
-                                itemsPendingTrash: $itemsPendingTrash
-                            )
-                            StatusBar()
-                        }
-                        .onKeyPress(.delete) {
-                            guard model.canGoBack else {
-                                return .ignored
-                            }
-
-                            model.goBack()
-                            return .handled
-                        }
-                    }
-                }
-            }
-            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 300)
-            .layoutPriority(1)
-
+        Group {
             if model.isIntegratedTerminalPresented,
                model.currentURL.isFileURL,
                model.detailDestination == .files,
                !tabs.isSpaceAnalyzerActive {
-                IntegratedTerminalView(directoryURL: model.currentURL) {
-                    model.isIntegratedTerminalPresented = false
+                VSplitView {
+                    browserNavigationView
+                        .layoutPriority(1)
+
+                    IntegratedTerminalView(directoryURL: model.currentURL) {
+                        model.isIntegratedTerminalPresented = false
+                    }
+                    .id(model.currentURL)
+                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 180, idealHeight: 196)
                 }
-                .id(model.currentURL)
-                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 180, idealHeight: 196)
+            } else {
+                browserNavigationView
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity)
@@ -230,6 +197,47 @@ private struct ActiveBrowserView: View {
             }
         }
         .environmentObject(model)
+    }
+
+    private var browserNavigationView: some View {
+        NavigationSplitView {
+            SidebarView()
+                .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+        } detail: {
+            switch model.detailDestination {
+            case .copyQueue:
+                CopyQueueView(queue: model.copyQueue)
+            case .about:
+                AboutView()
+            case .settings:
+                SettingsSurface()
+            case .files:
+                if tabs.isSpaceAnalyzerActive {
+                    SpaceAnalyzerView()
+                        .environmentObject(tabs.spaceAnalyzerViewModel)
+                        .environmentObject(tabs)
+                } else {
+                    VStack(spacing: 0) {
+                        BrowserToolbar()
+                        FileTableView(
+                            renameItem: $renameItem,
+                            renameText: $renameText,
+                            itemsPendingTrash: $itemsPendingTrash
+                        )
+                        StatusBar()
+                    }
+                    .onKeyPress(.delete) {
+                        guard model.canGoBack else {
+                            return .ignored
+                        }
+
+                        model.goBack()
+                        return .handled
+                    }
+                }
+            }
+        }
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 300)
     }
 
     private var copyConflictTitle: String {
