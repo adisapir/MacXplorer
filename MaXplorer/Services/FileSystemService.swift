@@ -15,6 +15,7 @@ struct DirectoryListingOptions: Equatable, Sendable {
 }
 protocol FileSystemService: Sendable {
     func listDirectory(at url: URL, showHiddenFiles: Bool, options: DirectoryListingOptions) async throws -> [FileItem]
+    func fileItem(at url: URL, options: DirectoryListingOptions) async throws -> FileItem
     func createFolder(named name: String, in directory: URL) async throws -> URL
     func renameItem(at url: URL, to newName: String) async throws -> URL
     func moveItems(_ resolvedItems: [(source: URL, shouldOverwrite: Bool)], to directory: URL) async throws -> [URL]
@@ -85,6 +86,13 @@ struct LocalFileSystemService: FileSystemService {
                 return lhs.0.name.localizedStandardCompare(rhs.0.name) == .orderedAscending
             }
             return sortedItems.map { $0.0 }
+        }.value
+    }
+
+    func fileItem(at url: URL, options: DirectoryListingOptions) async throws -> FileItem {
+        let resourceKeys = keys
+        return try await Task.detached(priority: .userInitiated) {
+            try Self.makeFileItem(for: url, resourceKeys: resourceKeys, options: options)
         }.value
     }
 

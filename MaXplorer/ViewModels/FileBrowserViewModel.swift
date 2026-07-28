@@ -98,7 +98,7 @@ final class FileBrowserViewModel: ObservableObject {
                 return
             }
 
-            Task { await self.reload(selecting: destinationURL) }
+            Task { await self.refreshAfterCompletedItem(destinationURL) }
         }
         self.copyQueue.onMoveCompleted = { [weak self] sourceURL in
             self?.clearCutItems(containing: [sourceURL])
@@ -356,6 +356,11 @@ final class FileBrowserViewModel: ObservableObject {
     private func startMonitoringCurrentFolder() {
         stopMonitoringCurrentFolder()
         guard currentURL.isFileURL else { return }
+
+        // DispatchSource directory events are reliable for local filesystems,
+        // but SMB writes can produce reload storms while a queued copy is active.
+        let volumeValues = try? currentURL.resourceValues(forKeys: [.volumeIsLocalKey])
+        guard volumeValues?.volumeIsLocal != false else { return }
 
         let descriptor = open(currentURL.path, O_EVTONLY)
         guard descriptor >= 0 else { return }
@@ -1030,6 +1035,35 @@ final class FileBrowserViewModel: ObservableObject {
             if let selectionAnchorID, !selectedItemIDs.contains(selectionAnchorID) {
                 self.selectionAnchorID = selectedItemIDs.first
             }
+        }
+    }
+
+    private func refreshAfterCompletedItem(_ destinationURL: URL) async {
+        let destinationDirectory = destinationURL.deletingLastPathComponent().standardizedFileURL
+        guard destinationDirectory == currentURL.standardizedFileURL else {
+            return
+        }
+
+        let volumeValues = try? destinationDirectory.resourceValues(forKeys: [.volumeIsLocalKey])
+        guard volumeValues?.volumeIsLocal == false else {
+            await reload(selecting: destinationURL)
+            return
+        }
+
+        do {
+            // Keep completion feedback responsive on SMB. Optional Owner and
+            // Date Taken lookups can each require additional remote round trips.
+            let item = try await fileSystem.fileItem(at: destinationURL, options: DirectoryListingOptions())
+            guard destinationDirectory == currentURL.standardizedFileURL else {
+                return
+            }
+
+            items.removeAll { $0.id == item.id }
+            items.append(item)
+            selectedItemIDs = [item.id]
+            selectionAnchorID = item.id
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 
