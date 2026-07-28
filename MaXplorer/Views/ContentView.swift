@@ -641,14 +641,14 @@ private struct SidebarView: View {
                 case spaceAnalyzerSelectionID:
                     tabs.openSpaceAnalyzer()
                 case copyQueueSelectionID:
-                    model.showCopyQueue()
+                    tabs.showCopyQueue()
                 case settingsSelectionID:
                     model.showSettings()
                 case aboutSelectionID:
                     model.showAbout()
                 default:
                     if let url = URL(string: selection) {
-                        model.navigate(to: url)
+                        tabs.browseLocation(url)
                     }
                 }
             }
@@ -730,16 +730,8 @@ private struct SidebarView: View {
             }
 
             Section("Copy Queue") {
-                HStack(spacing: 8) {
-                    Label("Copy Queue", systemImage: "doc.on.clipboard")
-
-                    Spacer(minLength: 8)
-
-                    if model.copyQueue.activeCopyCount > 0 {
-                        PulsingStatusDot()
-                    }
-                }
-                .tag(copyQueueSelectionID)
+                CopyQueueSidebarRow(queue: model.copyQueue)
+                    .tag(copyQueueSelectionID)
             }
 
             Section {
@@ -779,24 +771,38 @@ private struct SidebarView: View {
     }
 }
 
-private struct PulsingStatusDot: View {
-    @State private var isPulsing = false
+private struct CopyQueueSidebarRow: View {
+    @ObservedObject var queue: CopyQueueViewModel
 
     var body: some View {
-        Circle()
-            .fill(Color.blue)
-            .frame(width: 8, height: 8)
-            .shadow(color: .blue.opacity(0.65), radius: isPulsing ? 5 : 1)
-            .opacity(isPulsing ? 0.35 : 1)
-            .scaleEffect(isPulsing ? 1.35 : 0.85)
-            .animation(
-                .easeInOut(duration: 0.75).repeatForever(autoreverses: true),
-                value: isPulsing
-            )
-            .onAppear {
-                isPulsing = true
+        ZStack(alignment: .leading) {
+            if queue.hasActiveOperations {
+                GeometryReader { proxy in
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color.accentColor.opacity(0.22))
+                        .frame(width: proxy.size.width * queue.overallProgress)
+                }
+                .allowsHitTesting(false)
             }
-            .accessibilityLabel("Copy in progress")
+
+            HStack(spacing: 8) {
+                Label("Copy Queue", systemImage: "doc.on.clipboard")
+
+                Spacer(minLength: 8)
+
+                if queue.hasActiveOperations {
+                    Text(queue.overallProgress, format: .percent.precision(.fractionLength(0)))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+            .padding(.horizontal, 5)
+        }
+        .frame(minHeight: 24)
+        .contentShape(Rectangle())
+        .animation(.linear(duration: 0.15), value: queue.overallProgress)
+        .accessibilityValue(queue.hasActiveOperations ? queue.overallProgress.formatted(.percent) : "")
     }
 }
 
@@ -1073,7 +1079,7 @@ private struct CopyQueueRow: View {
         case .pending:
             return "Pending"
         case .running:
-            return "Copying"
+            return item.operation == .move ? "Moving" : "Copying"
         case .completed:
             return "Complete"
         case .failed:

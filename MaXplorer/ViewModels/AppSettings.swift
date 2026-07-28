@@ -1,5 +1,7 @@
-import Foundation
+import AppKit
 import Combine
+import CoreFoundation
+import SwiftUI
 
 @MainActor
 final class AppSettings: ObservableObject {
@@ -18,6 +20,7 @@ final class AppSettings: ObservableObject {
             UserDefaults.standard.set(appearance.rawValue, forKey: Self.appearanceKey)
         }
     }
+    @Published private(set) var systemColorScheme: ColorScheme
 
     @Published var maximumConcurrentTabs: Int {
         didSet {
@@ -69,10 +72,12 @@ final class AppSettings: ObservableObject {
     }
 
     @Published private(set) var manualFolderHistory: [String]
+    private var appearanceObservation: NSObjectProtocol?
 
     init(defaults: UserDefaults = .standard) {
         let rawValue = defaults.string(forKey: Self.appearanceKey)
         self.appearance = rawValue.flatMap(AppAppearance.init(rawValue:)) ?? .system
+        self.systemColorScheme = Self.currentSystemColorScheme
 
         let savedTabLimit = defaults.integer(forKey: Self.maximumConcurrentTabsKey)
         self.maximumConcurrentTabs = savedTabLimit == 0 ? 20 : Self.clampedTabLimit(savedTabLimit)
@@ -93,6 +98,19 @@ final class AppSettings: ObservableObject {
         }
 
         trimManualFolderHistory()
+        appearanceObservation = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.systemColorScheme = Self.currentSystemColorScheme
+            }
+        }
+    }
+
+    var preferredColorScheme: ColorScheme {
+        appearance.colorScheme ?? systemColorScheme
     }
 
     func toggleColumn(_ column: FileColumn) {
@@ -135,6 +153,16 @@ final class AppSettings: ObservableObject {
 
     private static func clampedMaximumConcurrentCopiedFiles(_ value: Int) -> Int {
         min(max(value, maximumConcurrentCopiedFilesRange.lowerBound), maximumConcurrentCopiedFilesRange.upperBound)
+    }
+
+    private static var currentSystemColorScheme: ColorScheme {
+        let interfaceStyle = CFPreferencesCopyValue(
+            "AppleInterfaceStyle" as CFString,
+            kCFPreferencesAnyApplication,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        ) as? String
+        return interfaceStyle == "Dark" ? .dark : .light
     }
 
     private func trimManualFolderHistory() {

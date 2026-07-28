@@ -17,7 +17,8 @@ struct MaXplorerApp: App {
             ContentView()
                 .environmentObject(tabs)
                 .environmentObject(settings)
-                .preferredColorScheme(settings.appearance.colorScheme)
+                .preferredColorScheme(settings.preferredColorScheme)
+                .background(WindowAppearanceBridge(colorScheme: settings.preferredColorScheme))
                 .frame(minWidth: 980, minHeight: 620)
                 .onAppear {
                     tabs.updateMaximumConcurrentTabs(settings.maximumConcurrentTabs)
@@ -246,7 +247,8 @@ struct MaXplorerApp: App {
         Settings {
             SettingsView()
                 .environmentObject(settings)
-                .preferredColorScheme(settings.appearance.colorScheme)
+                .preferredColorScheme(settings.preferredColorScheme)
+                .background(WindowAppearanceBridge(colorScheme: settings.preferredColorScheme))
         }
     }
 
@@ -259,5 +261,47 @@ struct MaXplorerApp: App {
             responder = current.nextResponder
         }
         return nil
+    }
+}
+
+private struct WindowAppearanceBridge: NSViewRepresentable {
+    let colorScheme: ColorScheme
+
+    func makeNSView(context: Context) -> WindowAppearanceView {
+        WindowAppearanceView(colorScheme: colorScheme)
+    }
+
+    func updateNSView(_ nsView: WindowAppearanceView, context: Context) {
+        nsView.colorScheme = colorScheme
+    }
+}
+
+private final class WindowAppearanceView: NSView {
+    var colorScheme: ColorScheme {
+        didSet {
+            applyAppearance()
+        }
+    }
+
+    init(colorScheme: ColorScheme) {
+        self.colorScheme = colorScheme
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applyAppearance()
+    }
+
+    private func applyAppearance() {
+        let appearanceName: NSAppearance.Name = colorScheme == .dark ? .darkAqua : .aqua
+        let resolvedAppearance = NSAppearance(named: appearanceName)
+        window?.appearance = resolvedAppearance
+        appearance = resolvedAppearance
     }
 }

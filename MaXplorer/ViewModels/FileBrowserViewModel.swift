@@ -100,6 +100,9 @@ final class FileBrowserViewModel: ObservableObject {
 
             Task { await self.reload(selecting: destinationURL) }
         }
+        self.copyQueue.onMoveCompleted = { [weak self] sourceURL in
+            self?.clearCutItems(containing: [sourceURL])
+        }
 
         // Defer the initial load to the next main-actor tick. Calling reload()
         // directly here would publish @Published changes (isLoading/errorMessage)
@@ -827,21 +830,8 @@ final class FileBrowserViewModel: ObservableObject {
             copyQueue.maximumConcurrentCopies = maximumConcurrentCopies
             copyQueue.enqueue(session.approvedItems, to: session.destinationDirectory)
 
-        case .move(let shouldClearCut):
-            let approvedItems = session.approvedItems
-            let destinationDirectory = session.destinationDirectory
-            let allSources = session.allSources
-            Task {
-                do {
-                    let movedURLs = try await fileSystem.moveItems(approvedItems, to: destinationDirectory)
-                    if shouldClearCut {
-                        clearCutItems(containing: allSources)
-                    }
-                    await reload(selecting: movedURLs.first)
-                } catch {
-                    errorMessage = error.localizedDescription
-                }
-            }
+        case .move:
+            copyQueue.enqueueMoves(session.approvedItems, to: session.destinationDirectory)
         }
     }
 

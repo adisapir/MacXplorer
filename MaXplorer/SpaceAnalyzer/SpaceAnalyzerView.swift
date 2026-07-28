@@ -319,8 +319,7 @@ private struct TileView: View {
             }
             Button("Browse Location") {
                 let target = node.isDirectory ? node.url : node.url.deletingLastPathComponent()
-                tabs.addTab()
-                tabs.activeModel.navigate(to: target)
+                tabs.browseLocation(target)
             }
             Button("Copy Path to Clipboard") {
                 NSPasteboard.general.clearContents()

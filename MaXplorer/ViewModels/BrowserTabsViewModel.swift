@@ -74,6 +74,22 @@ final class BrowserTabsViewModel: ObservableObject {
         selectedTabID = tab.id
     }
 
+    func browseLocation(_ url: URL) {
+        guard selectBrowserTabForSidebarAction() else {
+            return
+        }
+
+        activeModel.navigate(to: url)
+    }
+
+    func showCopyQueue() {
+        guard selectBrowserTabForSidebarAction() else {
+            return
+        }
+
+        activeModel.showCopyQueue()
+    }
+
     /// Propagates the file-listing options (which slow columns to fetch) to
     /// every tab so switching tabs stays consistent.
     func applyListingOptions(_ options: DirectoryListingOptions) {
@@ -216,6 +232,19 @@ final class BrowserTabsViewModel: ObservableObject {
             id: UUID(),
             model: FileBrowserViewModel(fileSystem: LocalFileSystemService())
         )
+    }
+
+    private func selectBrowserTabForSidebarAction() -> Bool {
+        guard isSpaceAnalyzerActive else {
+            return true
+        }
+
+        guard canAddTab else {
+            return false
+        }
+
+        addTab()
+        return true
     }
 
     private static func clampedTabLimit(_ value: Int) -> Int {

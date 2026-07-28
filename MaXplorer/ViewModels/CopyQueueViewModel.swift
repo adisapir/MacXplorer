@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Darwin
 
 enum CopyConflictResolution {
     case overwrite
@@ -26,12 +27,18 @@ enum CopyQueueItemState: Equatable {
     }
 }
 
+nonisolated enum CopyQueueOperation: Equatable, Sendable {
+    case copy
+    case move
+}
+
 struct CopyQueueItem: Identifiable, Equatable {
     let id: UUID
     let sourceURL: URL
     let destinationURL: URL
     let name: String
     let shouldOverwrite: Bool
+    let operation: CopyQueueOperation
     var state: CopyQueueItemState
     var totalBytes: Int64
     var copiedBytes: Int64
@@ -60,6 +67,7 @@ final class CopyQueueViewModel: ObservableObject {
     @Published private(set) var items: [CopyQueueItem] = []
 
     var onItemCompleted: ((URL) -> Void)?
+    var onMoveCompleted: ((URL) -> Void)?
 
     var maximumConcurrentCopies = 3 {
         didSet {
@@ -69,6 +77,8 @@ final class CopyQueueViewModel: ObservableObject {
     }
 
     private var tasks: [CopyQueueItem.ID: Task<Void, Never>] = [:]
+    private var aggregateTotalItemCount = 0
+    private var aggregateFinishedItemCount = 0
 
     var hasItems: Bool {
         !items.isEmpty
@@ -76,6 +86,24 @@ final class CopyQueueViewModel: ObservableObject {
 
     var activeCopyCount: Int {
         items.filter { $0.state.isActive }.count
+    }
+
+    var hasActiveOperations: Bool {
+        activeCopyCount > 0
+    }
+
+    var overallProgress: Double {
+        guard aggregateTotalItemCount > 0 else {
+            return 0
+        }
+
+        let activeProgress = items
+            .filter { $0.state.isActive }
+            .reduce(0) { $0 + $1.progress }
+        return min(
+            1,
+            (Double(aggregateFinishedItemCount) + activeProgress) / Double(aggregateTotalItemCount)
+        )
     }
 
     func enqueue(_ sources: [URL], to destinationDirectory: URL, conflictResolution: CopyConflictResolution) {
@@ -104,6 +132,7 @@ final class CopyQueueViewModel: ObservableObject {
                 destinationURL: destination,
                 name: source.lastPathComponent,
                 shouldOverwrite: destinationExists && shouldOverwrite,
+                operation: .copy,
                 state: .pending,
                 totalBytes: 0,
                 copiedBytes: 0,
@@ -116,7 +145,7 @@ final class CopyQueueViewModel: ObservableObject {
             return
         }
 
-        items.append(contentsOf: newItems)
+        appendToQueue(newItems)
         startAvailableCopies()
     }
 
@@ -134,6 +163,7 @@ final class CopyQueueViewModel: ObservableObject {
                 destinationURL: destination,
                 name: source.lastPathComponent,
                 shouldOverwrite: shouldOverwrite,
+                operation: .copy,
                 state: .pending,
                 totalBytes: 0,
                 copiedBytes: 0,
@@ -146,7 +176,38 @@ final class CopyQueueViewModel: ObservableObject {
             return
         }
 
-        items.append(contentsOf: newItems)
+        appendToQueue(newItems)
+        startAvailableCopies()
+    }
+
+    func enqueueMoves(_ resolvedItems: [(source: URL, shouldOverwrite: Bool)], to destinationDirectory: URL) {
+        let destinationDirectory = destinationDirectory.standardizedFileURL
+        let newItems = resolvedItems.compactMap { sourceURL, shouldOverwrite -> CopyQueueItem? in
+            let source = sourceURL.standardizedFileURL
+            guard source.deletingLastPathComponent() != destinationDirectory else {
+                return nil
+            }
+
+            return CopyQueueItem(
+                id: UUID(),
+                sourceURL: source,
+                destinationURL: destinationDirectory.appendingPathComponent(source.lastPathComponent),
+                name: source.lastPathComponent,
+                shouldOverwrite: shouldOverwrite,
+                operation: .move,
+                state: .pending,
+                totalBytes: 0,
+                copiedBytes: 0,
+                bytesPerSecond: 0,
+                startedAt: nil
+            )
+        }
+
+        guard !newItems.isEmpty else {
+            return
+        }
+
+        appendToQueue(newItems)
         startAvailableCopies()
     }
 
@@ -158,7 +219,12 @@ final class CopyQueueViewModel: ObservableObject {
             return
         }
 
+        guard items[index].state.isActive else {
+            return
+        }
+
         items[index].state = .cancelled
+        aggregateFinishedItemCount += 1
         startAvailableCopies()
     }
 
@@ -188,6 +254,7 @@ final class CopyQueueViewModel: ObservableObject {
         items[index].startedAt = Date()
         let sourceURL = items[index].sourceURL
         let destinationURL = items[index].destinationURL
+        let operation = items[index].operation
         let shouldOverwrite = items[index].shouldOverwrite
 
         tasks[itemID] = Task {
@@ -195,9 +262,10 @@ final class CopyQueueViewModel: ObservableObject {
                 let totalBytes = try await CopyWorker.totalByteCount(for: sourceURL)
                 updateTotalBytes(totalBytes, for: itemID)
 
-                try await CopyWorker.copy(
-                    sourceURL,
-                    to: destinationURL,
+                try await CopyWorker.perform(
+                    operation,
+                    sourceURL: sourceURL,
+                    destinationURL: destinationURL,
                     overwrite: shouldOverwrite
                 ) { [weak self] copiedBytes in
                     Task { @MainActor [weak self] in
@@ -241,9 +309,15 @@ final class CopyQueueViewModel: ObservableObject {
             return
         }
 
+        let sourceURL = items[index].sourceURL
         let destinationURL = items[index].destinationURL
+        let operation = items[index].operation
         items.remove(at: index)
+        aggregateFinishedItemCount += 1
         onItemCompleted?(destinationURL)
+        if operation == .move {
+            onMoveCompleted?(sourceURL)
+        }
         startAvailableCopies()
     }
 
@@ -254,7 +328,13 @@ final class CopyQueueViewModel: ObservableObject {
             return
         }
 
+        guard items[index].state.isActive else {
+            startAvailableCopies()
+            return
+        }
+
         items[index].state = .cancelled
+        aggregateFinishedItemCount += 1
         startAvailableCopies()
     }
 
@@ -265,8 +345,24 @@ final class CopyQueueViewModel: ObservableObject {
             return
         }
 
+        guard items[index].state.isActive else {
+            startAvailableCopies()
+            return
+        }
+
         items[index].state = .failed(message)
+        aggregateFinishedItemCount += 1
         startAvailableCopies()
+    }
+
+    private func appendToQueue(_ newItems: [CopyQueueItem]) {
+        if !hasActiveOperations {
+            aggregateTotalItemCount = 0
+            aggregateFinishedItemCount = 0
+        }
+
+        aggregateTotalItemCount += newItems.count
+        items.append(contentsOf: newItems)
     }
 }
 
@@ -277,22 +373,83 @@ private enum CopyWorker {
         }.value
     }
 
-    static func copy(
-        _ sourceURL: URL,
-        to destinationURL: URL,
+    static func perform(
+        _ operation: CopyQueueOperation,
+        sourceURL: URL,
+        destinationURL: URL,
         overwrite: Bool,
         progress: @escaping @Sendable (Int64) -> Void
     ) async throws {
         try await Task.detached(priority: .utility) {
+            if operation == .move,
+               try !requiresCopyForMove(from: sourceURL, to: destinationURL.deletingLastPathComponent()) {
+                if FileManager.default.fileExists(atPath: destinationURL.path), overwrite {
+                    try FileManager.default.removeItem(at: destinationURL)
+                }
+                do {
+                    try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
+                    progress(try byteCount(for: destinationURL))
+                    return
+                } catch {
+                    guard isCrossDeviceMoveError(error) else {
+                        throw error
+                    }
+                }
+            }
+
             var copiedBytes: Int64 = 0
-            try copyItem(
-                sourceURL,
-                to: destinationURL,
-                overwrite: overwrite,
-                copiedBytes: &copiedBytes,
-                progress: progress
-            )
+            do {
+                try copyItem(
+                    sourceURL,
+                    to: destinationURL,
+                    overwrite: overwrite,
+                    copiedBytes: &copiedBytes,
+                    progress: progress
+                )
+            } catch {
+                if operation == .move {
+                    try? FileManager.default.removeItem(at: destinationURL)
+                }
+                throw error
+            }
+
+            if operation == .move {
+                do {
+                    try FileManager.default.removeItem(at: sourceURL)
+                } catch {
+                    try? FileManager.default.removeItem(at: destinationURL)
+                    throw error
+                }
+            }
         }.value
+    }
+
+    nonisolated private static func requiresCopyForMove(
+        from sourceURL: URL,
+        to destinationDirectory: URL
+    ) throws -> Bool {
+        let sourceVolume = try sourceURL.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier
+        let destinationVolume = try destinationDirectory.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier
+        guard let sourceVolume, let destinationVolume else {
+            return false
+        }
+        guard let sourceObject = sourceVolume as? NSObject,
+              let destinationObject = destinationVolume as? NSObject else {
+            return String(describing: sourceVolume) != String(describing: destinationVolume)
+        }
+        return !sourceObject.isEqual(destinationObject)
+    }
+
+    nonisolated private static func isCrossDeviceMoveError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSPOSIXErrorDomain, nsError.code == Int(EXDEV) {
+            return true
+        }
+
+        guard let underlyingError = nsError.userInfo[NSUnderlyingErrorKey] as? Error else {
+            return false
+        }
+        return isCrossDeviceMoveError(underlyingError)
     }
 
     nonisolated private static func byteCount(for url: URL) throws -> Int64 {
