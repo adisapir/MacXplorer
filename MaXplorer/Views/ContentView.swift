@@ -759,6 +759,7 @@ private struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .padding(.leading, 12)
         .symbolRenderingMode(.hierarchical)
     }
 
