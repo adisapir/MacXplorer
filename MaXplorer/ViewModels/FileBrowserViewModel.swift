@@ -33,16 +33,12 @@ final class FileClipboard: ObservableObject {
 @MainActor
 final class FileBrowserViewModel: ObservableObject {
     private static let maximumQuickViewBytes = 10 * 1024 * 1024
-    private static let pinnedFavoritesKey = "PinnedFavoritePaths"
-    private static let removedBuiltInFavoritesKey = "RemovedBuiltInFavoritePaths"
     private static let networkRootURL = URL(string: "maxplorer://network")!
 
     @Published private(set) var currentURL: URL
     @Published private(set) var items: [FileItem] = []
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
-    @Published private(set) var pinnedFavoriteURLs: [URL] = []
-    @Published private(set) var removedBuiltInFavoriteURLs: [URL] = []
     @Published var isConnectToServerPresented = false
     @Published var isGoToFolderPresented = false
     @Published var detailDestination: DetailDestination = .files
@@ -67,6 +63,7 @@ final class FileBrowserViewModel: ObservableObject {
     let fileSystem: any FileSystemService
     let copyQueue = CopyQueueViewModel()
     private let fileClipboard: FileClipboard
+    private let favoritesStore: FavoritesStore
     private let networkBrowser = NetworkBrowserService()
     private var backStack: [URL] = []
     private var forwardStack: [URL] = []
@@ -78,6 +75,7 @@ final class FileBrowserViewModel: ObservableObject {
     private var folderMonitor: DispatchSourceFileSystemObject?
     private var monitorReloadTask: Task<Void, Never>?
     private var clipboardObservation: AnyCancellable?
+    private var favoritesObservation: AnyCancellable?
 
     private struct ConflictSession {
         enum Operation {
@@ -92,14 +90,13 @@ final class FileBrowserViewModel: ObservableObject {
         let totalConflicts: Int
     }
 
-    init(fileSystem: FileSystemService, fileClipboard: FileClipboard) {
+    init(fileSystem: FileSystemService, fileClipboard: FileClipboard, favoritesStore: FavoritesStore) {
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
         self.fileSystem = fileSystem
         self.fileClipboard = fileClipboard
+        self.favoritesStore = favoritesStore
         self.currentURL = homeURL
         self.pathText = homeURL.path
-        self.pinnedFavoriteURLs = Self.loadPinnedFavorites()
-        self.removedBuiltInFavoriteURLs = Self.loadRemovedBuiltInFavorites()
         self.copyQueue.onItemCompleted = { [weak self] destinationURL in
             guard let self, destinationURL.deletingLastPathComponent().standardizedFileURL == self.currentURL.standardizedFileURL else {
                 return
@@ -111,6 +108,9 @@ final class FileBrowserViewModel: ObservableObject {
             self?.clearCutItems(containing: [sourceURL])
         }
         self.clipboardObservation = fileClipboard.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+        self.favoritesObservation = favoritesStore.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
 
@@ -139,6 +139,14 @@ final class FileBrowserViewModel: ObservableObject {
 
     var copiedItemURLs: [URL] {
         fileClipboard.copiedItemURLs
+    }
+
+    var pinnedFavoriteURLs: [URL] {
+        favoritesStore.pinnedURLs
+    }
+
+    var removedBuiltInFavoriteURLs: [URL] {
+        favoritesStore.removedBuiltInURLs
     }
 
     private var filteredItems: [FileItem] {
@@ -606,8 +614,7 @@ final class FileBrowserViewModel: ObservableObject {
         }
 
         if isBuiltInFavorite(standardizedURL) {
-            removedBuiltInFavoriteURLs.removeAll { $0.standardizedFileURL == standardizedURL }
-            saveRemovedBuiltInFavorites()
+            favoritesStore.removeRemovedBuiltIn(standardizedURL)
             return
         }
 
@@ -615,8 +622,7 @@ final class FileBrowserViewModel: ObservableObject {
             return
         }
 
-        pinnedFavoriteURLs.append(standardizedURL)
-        savePinnedFavorites()
+        favoritesStore.addPinned(standardizedURL)
     }
 
     func removeFavorite(_ url: URL) {
@@ -626,11 +632,9 @@ final class FileBrowserViewModel: ObservableObject {
                 return
             }
 
-            removedBuiltInFavoriteURLs.append(standardizedURL)
-            saveRemovedBuiltInFavorites()
+            favoritesStore.addRemovedBuiltIn(standardizedURL)
         } else {
-            pinnedFavoriteURLs.removeAll { $0.standardizedFileURL == standardizedURL }
-            savePinnedFavorites()
+            favoritesStore.removePinned(standardizedURL)
         }
     }
 
@@ -869,15 +873,12 @@ final class FileBrowserViewModel: ObservableObject {
         let source = url.standardizedFileURL
         let target = targetURL.standardizedFileURL
         guard source != target,
-              let fromIndex = pinnedFavoriteURLs.firstIndex(of: source),
-              let targetIndex = pinnedFavoriteURLs.firstIndex(of: target) else {
+              pinnedFavoriteURLs.contains(source),
+              pinnedFavoriteURLs.contains(target) else {
             return
         }
 
-        let moved = pinnedFavoriteURLs.remove(at: fromIndex)
-        let insertionIndex = pinnedFavoriteURLs.firstIndex(of: target) ?? targetIndex
-        pinnedFavoriteURLs.insert(moved, at: insertionIndex)
-        savePinnedFavorites()
+        favoritesStore.movePinned(source, before: target)
     }
 
     func isPinnedFavorite(_ url: URL) -> Bool {
@@ -1141,14 +1142,6 @@ final class FileBrowserViewModel: ObservableObject {
         return builtInURLs.contains(url.standardizedFileURL)
     }
 
-    private func savePinnedFavorites() {
-        UserDefaults.standard.set(pinnedFavoriteURLs.map(\.path), forKey: Self.pinnedFavoritesKey)
-    }
-
-    private func saveRemovedBuiltInFavorites() {
-        UserDefaults.standard.set(removedBuiltInFavoriteURLs.map(\.path), forKey: Self.removedBuiltInFavoritesKey)
-    }
-
     private func clearCutItems(containing urls: [URL]) {
         let standardizedURLs = Set(urls.map(\.standardizedFileURL))
         fileClipboard.cutItemURLs.removeAll { standardizedURLs.contains($0.standardizedFileURL) }
@@ -1167,41 +1160,6 @@ final class FileBrowserViewModel: ObservableObject {
 
         let bounds = min(anchorIndex, targetIndex)...max(anchorIndex, targetIndex)
         selectedItemIDs = Set(bounds.map { displayedItems[$0].id })
-    }
-
-    private static func loadPinnedFavorites() -> [URL] {
-        let paths = UserDefaults.standard.stringArray(forKey: pinnedFavoritesKey) ?? []
-        var seen = Set<String>()
-
-        return paths.compactMap { path in
-            let url = URL(fileURLWithPath: path).standardizedFileURL
-            guard !seen.contains(url.path) else {
-                return nil
-            }
-
-            var isDirectory: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
-                return nil
-            }
-
-            seen.insert(url.path)
-            return url
-        }
-    }
-
-    private static func loadRemovedBuiltInFavorites() -> [URL] {
-        let paths = UserDefaults.standard.stringArray(forKey: removedBuiltInFavoritesKey) ?? []
-        var seen = Set<String>()
-
-        return paths.compactMap { path in
-            let url = URL(fileURLWithPath: path).standardizedFileURL
-            guard !seen.contains(url.path) else {
-                return nil
-            }
-
-            seen.insert(url.path)
-            return url
-        }
     }
 
     private static func serverURL(from input: String) -> URL? {
