@@ -1,5 +1,16 @@
 # Change Log
 
+## 2026-07-29 — v1.05
+
+- Added favorites persistence and integrated favorite paths with browser tabs and file browser navigation.
+- Added paste support through the tab strip and shared browser/file clipboard plumbing.
+- Improved file refresh behavior after filesystem changes.
+- Refined copy queue behavior for clearer progress and completion handling.
+- Improved Space Analyzer tile hover tooltips so size appears first, followed by the item name and full path.
+- Made About popups for README and Changelog resizable.
+- Refreshed README feature coverage, including advantages over Finder.
+- Improved app color scheme handling and sidebar layout polish.
+
 ## 2026-07-12 — v1.04
 
 - Cut and paste now moves files reliably between local drives and mounted network volumes.
