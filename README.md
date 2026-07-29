@@ -4,17 +4,20 @@ MaXplorer is a native macOS file manager aimed at Windows Explorer-style navigat
 
 ## Features
 
-- **True tabbed browsing** — open multiple folders in tabs, reorder them by dragging, duplicate tabs, and cap how many can be open at once. Finder's tabs pale in comparison.
-- **Cut & paste for moves** — use `⌘X` / `⌘V` to move files the way Windows users expect, instead of hunting for Option+drag.
-- **Visible copy queue with per-file progress** — watch every active transfer in a dedicated queue panel, with speed and estimated time remaining. No more wondering whether Finder finished copying.
+- **True tabbed browsing** — open up to 50 folders in tabs, reorder them by dragging, duplicate tabs, sort them by name, and close duplicate locations in one action. The clipboard and favourites stay in sync across every tab.
+- **Cut & paste for moves** — use `⌘X` / `⌘V` to move files the way Windows users expect. Moves work across local drives and mounted network volumes, without relying on Finder's less discoverable modifier-key workflow.
+- **Paste straight into another tab** — copy or cut items, then use a destination tab's context menu to paste there without navigating away from the folder you are viewing.
+- **Visible copy and move queue** — watch every active transfer in a dedicated queue with per-file progress, overall progress, transfer speed, and estimated time remaining. Choose how many files MaXplorer processes concurrently.
 - **Granular conflict resolution** — when pasting or dropping files that already exist, choose Overwrite, Overwrite All, Skip, Skip All, or Cancel — one conflict at a time, with no surprises.
+- **Built-in Space Analyzer** — scan any folder into an interactive, colour-coded treemap, monitor scanning live, and open, browse to, or copy the path of large items directly. There is no need to install a separate disk-usage visualizer.
+- **Integrated terminal** — open a terminal pane inside the current tab, already set to that folder, or launch a separate Terminal window from the toolbar or context menu.
 - **Instant folder filtering** — `⌥⌘F` focuses a live filter field that narrows the current folder in real time, no Spotlight index required.
-- **Configurable columns** — show or hide Kind, Size, Date Modified, Date Created, Date Taken, and Owner per-session. Columns are persisted across launches.
-- **Network browsing built in** — browse `/Network`, mounted SMB/AFP volumes, and Connect to Server without leaving the app.
-- **Customisable sidebar** — pin any folder as a favourite, remove built-in locations you never use, and reorder pins by dragging.
+- **Network browsing built in** — discover local SMB servers, browse mounted SMB/AFP volumes, connect directly to a known server, and see correct free-space information for mounted network storage.
+- **Customisable, shared sidebar** — pin any folder as a favourite, remove built-in locations you never use, reorder pins by dragging, and see changes reflected across all open tabs.
 - **Drag & drop everywhere** — drop files onto a folder row or a tab to copy or move them; spring-loaded tab switching activates the target tab automatically.
+- **Quick View and Open With** — preview a selected file with Space and choose a compatible application from the same file context menu.
 - **Liquid Glass design** — toolbar, filter field, path bar, and settings surfaces all use macOS 26 Liquid Glass, so MaXplorer looks at home alongside the rest of the system.
-- **Terminal & Finder integration** — jump straight to a Terminal session or reveal any item in Finder from the context menu or keyboard shortcut.
+- **Finder integration when you need it** — reveal any item in Finder from the context menu or keyboard shortcut without giving up MaXplorer's workflow.
 
 ## Keyboard Shortcuts
 

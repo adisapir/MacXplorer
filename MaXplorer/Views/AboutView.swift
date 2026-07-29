@@ -240,6 +240,9 @@ private struct ChangelogSheet: View {
             .background(Color(nsColor: .textBackgroundColor))
         }
         .frame(minWidth: 560, minHeight: 460)
+        .background(
+            ResizableSheetWindowBridge(minSize: NSSize(width: 560, height: 460))
+        )
     }
 }
 
@@ -358,5 +361,52 @@ struct ReadmeSheet: View {
             .background(Color(nsColor: .textBackgroundColor))
         }
         .frame(minWidth: 640, minHeight: 520)
+        .background(
+            ResizableSheetWindowBridge(minSize: NSSize(width: 640, height: 520))
+        )
+    }
+}
+
+/// Applies normal macOS window resizing to a SwiftUI sheet while preserving
+/// the viewer's minimum usable content size.
+private struct ResizableSheetWindowBridge: NSViewRepresentable {
+    let minSize: NSSize
+
+    func makeNSView(context: Context) -> ResizableSheetWindowView {
+        ResizableSheetWindowView(minSize: minSize)
+    }
+
+    func updateNSView(_ nsView: ResizableSheetWindowView, context: Context) {
+        nsView.minSize = minSize
+        nsView.configureWindow()
+    }
+}
+
+private final class ResizableSheetWindowView: NSView {
+    var minSize: NSSize
+
+    init(minSize: NSSize) {
+        self.minSize = minSize
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        configureWindow()
+    }
+
+    func configureWindow() {
+        guard let window else {
+            return
+        }
+
+        window.styleMask.insert(.resizable)
+        window.contentMinSize = minSize
+        window.standardWindowButton(.zoomButton)?.isEnabled = true
     }
 }
