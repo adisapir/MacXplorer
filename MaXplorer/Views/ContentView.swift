@@ -363,6 +363,16 @@ private struct BrowserTabStrip: View {
                             }
                         )
                         .contextMenu {
+                            Button("Paste") {
+                                tabs.pasteItems(
+                                    to: tab.id,
+                                    maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles
+                                )
+                            }
+                            .disabled(!tabs.canPasteItems(to: tab.id))
+
+                            Divider()
+
                             Button("Duplicate Tab") {
                                 tabs.duplicateTab(tab.id)
                             }
@@ -1872,7 +1882,7 @@ private struct StatusBar: View {
                 }
             }
 
-            Spacer()
+          //  Spacer()
 
             if let stats = model.volumeStats {
                 let freePercent = Int((Double(stats.free) / Double(stats.total) * 100).rounded())
@@ -1889,7 +1899,7 @@ private struct StatusBar: View {
             }
         }
         .font(.footnote)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 26)
         .padding(.vertical, 7)
         .background(.bar)
     }

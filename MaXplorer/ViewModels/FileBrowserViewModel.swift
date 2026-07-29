@@ -25,6 +25,12 @@ struct CopyConflictRequest: Identifiable, Equatable {
 }
 
 @MainActor
+final class FileClipboard: ObservableObject {
+    @Published var cutItemURLs: [URL] = []
+    @Published var copiedItemURLs: [URL] = []
+}
+
+@MainActor
 final class FileBrowserViewModel: ObservableObject {
     private static let maximumQuickViewBytes = 10 * 1024 * 1024
     private static let pinnedFavoritesKey = "PinnedFavoritePaths"
@@ -37,8 +43,6 @@ final class FileBrowserViewModel: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var pinnedFavoriteURLs: [URL] = []
     @Published private(set) var removedBuiltInFavoriteURLs: [URL] = []
-    @Published private(set) var cutItemURLs: [URL] = []
-    @Published private(set) var copiedItemURLs: [URL] = []
     @Published var isConnectToServerPresented = false
     @Published var isGoToFolderPresented = false
     @Published var detailDestination: DetailDestination = .files
@@ -62,6 +66,7 @@ final class FileBrowserViewModel: ObservableObject {
 
     let fileSystem: any FileSystemService
     let copyQueue = CopyQueueViewModel()
+    private let fileClipboard: FileClipboard
     private let networkBrowser = NetworkBrowserService()
     private var backStack: [URL] = []
     private var forwardStack: [URL] = []
@@ -72,6 +77,7 @@ final class FileBrowserViewModel: ObservableObject {
     private var conflictSession: ConflictSession?
     private var folderMonitor: DispatchSourceFileSystemObject?
     private var monitorReloadTask: Task<Void, Never>?
+    private var clipboardObservation: AnyCancellable?
 
     private struct ConflictSession {
         enum Operation {
@@ -86,9 +92,10 @@ final class FileBrowserViewModel: ObservableObject {
         let totalConflicts: Int
     }
 
-    init(fileSystem: FileSystemService) {
+    init(fileSystem: FileSystemService, fileClipboard: FileClipboard) {
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
         self.fileSystem = fileSystem
+        self.fileClipboard = fileClipboard
         self.currentURL = homeURL
         self.pathText = homeURL.path
         self.pinnedFavoriteURLs = Self.loadPinnedFavorites()
@@ -102,6 +109,9 @@ final class FileBrowserViewModel: ObservableObject {
         }
         self.copyQueue.onMoveCompleted = { [weak self] sourceURL in
             self?.clearCutItems(containing: [sourceURL])
+        }
+        self.clipboardObservation = fileClipboard.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
         }
 
         // Defer the initial load to the next main-actor tick. Calling reload()
@@ -121,6 +131,14 @@ final class FileBrowserViewModel: ObservableObject {
 
     var displayedItems: [FileItem] {
         filteredItems.sorted(using: sortOrder)
+    }
+
+    var cutItemURLs: [URL] {
+        fileClipboard.cutItemURLs
+    }
+
+    var copiedItemURLs: [URL] {
+        fileClipboard.copiedItemURLs
     }
 
     private var filteredItems: [FileItem] {
@@ -297,6 +315,7 @@ final class FileBrowserViewModel: ObservableObject {
         let showHiddenFiles = showHiddenFiles
         let fileSystem = fileSystem
         let listingOptions = listingOptions
+        let isRemoteVolume = target != Self.networkRootURL && isOnRemoteMountedVolume(target)
         loadGeneration += 1
         let generation = loadGeneration
         isLoading = true
@@ -307,7 +326,12 @@ final class FileBrowserViewModel: ObservableObject {
                 if target == Self.networkRootURL {
                     loadedItems = await networkItems()
                 } else {
-                    loadedItems = try await fileSystem.listDirectory(at: target, showHiddenFiles: showHiddenFiles, options: listingOptions)
+                    let initialOptions = isRemoteVolume ? DirectoryListingOptions() : listingOptions
+                    loadedItems = try await fileSystem.listDirectory(
+                        at: target,
+                        showHiddenFiles: showHiddenFiles,
+                        options: initialOptions
+                    )
                 }
 
                 guard generation == loadGeneration else {
@@ -359,8 +383,7 @@ final class FileBrowserViewModel: ObservableObject {
 
         // DispatchSource directory events are reliable for local filesystems,
         // but SMB writes can produce reload storms while a queued copy is active.
-        let volumeValues = try? currentURL.resourceValues(forKeys: [.volumeIsLocalKey])
-        guard volumeValues?.volumeIsLocal != false else { return }
+        guard !isOnRemoteMountedVolume(currentURL) else { return }
 
         let descriptor = open(currentURL.path, O_EVTONLY)
         guard descriptor >= 0 else { return }
@@ -693,10 +716,10 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     func cutSelectedItems() {
-        cutItemURLs = selectedItems
+        fileClipboard.cutItemURLs = selectedItems
             .filter { !$0.isNetworkLocation }
             .map { $0.url.standardizedFileURL }
-        copiedItemURLs = []
+        fileClipboard.copiedItemURLs = []
     }
 
     func copySelectedItem() {
@@ -712,8 +735,8 @@ final class FileBrowserViewModel: ObservableObject {
             return
         }
 
-        copiedItemURLs = copiedURLs
-        cutItemURLs = []
+        fileClipboard.copiedItemURLs = copiedURLs
+        fileClipboard.cutItemURLs = []
         SystemActions.copyFileURLs(copiedURLs)
     }
 
@@ -1023,6 +1046,20 @@ final class FileBrowserViewModel: ObservableObject {
         }
     }
 
+    private func isOnRemoteMountedVolume(_ url: URL) -> Bool {
+        let values = try? url.resourceValues(forKeys: [.volumeURLKey, .volumeIsLocalKey])
+        if let isLocal = values?.volumeIsLocal {
+            return !isLocal
+        }
+
+        guard let volume = values?.volume else {
+            return false
+        }
+
+        let volumeValues = try? volume.resourceValues(forKeys: [.volumeIsLocalKey])
+        return volumeValues?.volumeIsLocal == false
+    }
+
     private func applyLoadedItems(_ loadedItems: [FileItem], selecting itemID: FileItem.ID?) {
         items = loadedItems
         if let itemID, loadedItems.contains(where: { $0.id == itemID }) {
@@ -1044,8 +1081,7 @@ final class FileBrowserViewModel: ObservableObject {
             return
         }
 
-        let volumeValues = try? destinationDirectory.resourceValues(forKeys: [.volumeIsLocalKey])
-        guard volumeValues?.volumeIsLocal == false else {
+        guard isOnRemoteMountedVolume(destinationDirectory) else {
             await reload(selecting: destinationURL)
             return
         }
@@ -1115,7 +1151,7 @@ final class FileBrowserViewModel: ObservableObject {
 
     private func clearCutItems(containing urls: [URL]) {
         let standardizedURLs = Set(urls.map(\.standardizedFileURL))
-        cutItemURLs.removeAll { standardizedURLs.contains($0.standardizedFileURL) }
+        fileClipboard.cutItemURLs.removeAll { standardizedURLs.contains($0.standardizedFileURL) }
     }
 
     private func selectRange(through item: FileItem) {
