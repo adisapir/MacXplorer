@@ -13,6 +13,8 @@ struct SettingsView: View {
             }
             .pickerStyle(.radioGroup)
 
+            Toggle("Banded file and folder rows", isOn: $settings.showsBandedFileRows)
+
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Maximum number of concurrent tabs")

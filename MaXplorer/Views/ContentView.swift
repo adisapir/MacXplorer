@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject private var tabs: BrowserTabsViewModel
+    @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
         VStack(spacing: 0) {
@@ -11,6 +12,14 @@ struct ContentView: View {
             ActiveBrowserView(model: tabs.activeModel)
                 .id(tabs.activeTab.id)
                 .environmentObject(tabs.activeModel)
+        }
+        .onAppear {
+            settings.onServerConnectionSucceeded = { [weak tabs] mountedVolumeURL in
+                tabs?.openLocationInNewTab(mountedVolumeURL)
+            }
+        }
+        .onDisappear {
+            settings.onServerConnectionSucceeded = nil
         }
     }
 }
@@ -797,6 +806,7 @@ private struct SidebarView: View {
             }
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
 
             Divider()
 
@@ -805,6 +815,7 @@ private struct SidebarView: View {
                     title: "Settings",
                     systemImage: "gearshape",
                     isSelected: !tabs.isSpaceAnalyzerActive && model.detailDestination == .settings,
+                    usesAccentColor: false,
                     action: tabs.showSettings
                 )
 
@@ -812,14 +823,15 @@ private struct SidebarView: View {
                     title: "About",
                     systemImage: "info.circle",
                     isSelected: !tabs.isSpaceAnalyzerActive && model.detailDestination == .about,
+                    usesAccentColor: true,
                     action: tabs.showAbout
                 )
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
-            .background(.bar)
         }
         .symbolRenderingMode(.hierarchical)
+        .background(.ultraThinMaterial)
     }
 
     private func handleFavoriteDrop(_ urls: [URL], before location: SidebarLocation) -> Bool {
@@ -843,6 +855,7 @@ private struct SidebarDockedButton: View {
     let title: String
     let systemImage: String
     let isSelected: Bool
+    let usesAccentColor: Bool
     let action: () -> Void
     @State private var isHovering = false
 
@@ -855,7 +868,7 @@ private struct SidebarDockedButton: View {
                 .contentShape(RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.blue)
+        .foregroundStyle(usesAccentColor ? Color.blue : Color.primary)
         .background {
             if isSelected || isHovering {
                 RoundedRectangle(cornerRadius: 7)
@@ -1652,6 +1665,8 @@ private struct FileTableView: View {
                     .width(min: 100, ideal: 140)
                 }
             }
+            .alternatingRowBackgrounds(settings.showsBandedFileRows ? .enabled : .disabled)
+            .listRowSeparator(settings.showsBandedFileRows ? .visible : .hidden)
             .dropDestination(for: URL.self) { urls, _ in
                 model.importItems(urls, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
                 return true
@@ -1920,7 +1935,7 @@ private struct FileTableView: View {
     }
 
     private func rowClickTarget(for item: FileItem) -> some View {
-        TableCellClickTarget { mode in
+        TableCellClickTarget(showsGridLines: settings.showsBandedFileRows) { mode in
             model.select(item, mode: mode)
         } onOpen: {
             model.selectedItemIDs = [item.id]
@@ -1984,6 +1999,7 @@ private struct StatusBar: View {
 }
 
 private struct TableCellClickTarget: NSViewRepresentable {
+    let showsGridLines: Bool
     let onSelect: (SelectionMode) -> Void
     let onOpen: () -> Void
     let onLongPress: () -> Void
@@ -1993,6 +2009,7 @@ private struct TableCellClickTarget: NSViewRepresentable {
         view.onSelect = onSelect
         view.onOpen = onOpen
         view.onLongPress = onLongPress
+        view.showsGridLines = showsGridLines
         return view
     }
 
@@ -2000,10 +2017,13 @@ private struct TableCellClickTarget: NSViewRepresentable {
         nsView.onSelect = onSelect
         nsView.onOpen = onOpen
         nsView.onLongPress = onLongPress
+        nsView.showsGridLines = showsGridLines
+        nsView.updateGridStyle()
     }
 }
 
 private final class TableCellClickTargetNSView: NSView {
+    var showsGridLines = true
     var onSelect: (SelectionMode) -> Void = { _ in }
     var onOpen: () -> Void = {}
     var onLongPress: () -> Void = {}
@@ -2011,6 +2031,52 @@ private final class TableCellClickTargetNSView: NSView {
     private var longPressTimer: Timer?
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        DispatchQueue.main.async { [weak self] in
+            self?.updateGridStyle()
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        DispatchQueue.main.async { [weak self] in
+            self?.updateGridStyle()
+        }
+    }
+
+    func updateGridStyle() {
+        if !showsGridLines, let contentView = window?.contentView {
+            removeGridLines(in: contentView)
+            return
+        }
+
+        var ancestor = superview
+        while let view = ancestor {
+            if let tableView = view as? NSTableView {
+                let desiredStyle: NSTableView.GridLineStyle = showsGridLines ? [.solidHorizontalGridLineMask] : []
+                tableView.gridColor = .gridColor
+                guard tableView.gridStyleMask != desiredStyle else {
+                    tableView.needsDisplay = true
+                    return
+                }
+                tableView.gridStyleMask = desiredStyle
+                tableView.needsDisplay = true
+                return
+            }
+            ancestor = view.superview
+        }
+    }
+
+    private func removeGridLines(in view: NSView) {
+        if let tableView = view as? NSTableView {
+            tableView.gridStyleMask = []
+            tableView.gridColor = .clear
+            tableView.needsDisplay = true
+        }
+        view.subviews.forEach(removeGridLines(in:))
+    }
 
     override func mouseDown(with event: NSEvent) {
         if event.modifierFlags.contains(.shift) {

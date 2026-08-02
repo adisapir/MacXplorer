@@ -88,6 +88,21 @@ final class BrowserTabsViewModel: ObservableObject {
         activeModel.navigate(to: url)
     }
 
+    func openLocationInNewTab(_ url: URL) {
+        guard canAddTab else {
+            activeModel.navigate(to: url)
+            return
+        }
+
+        let tab = Self.makeTab(fileClipboard: fileClipboard, favoritesStore: favoritesStore)
+        tab.model.setListingOptions(listingOptions)
+        tab.model.showHiddenFiles = showHiddenFiles
+        tab.model.showAliases = showAliases
+        tab.model.navigate(to: url)
+        tabs.append(tab)
+        selectedTabID = tab.id
+    }
+
     func showCopyQueue() {
         guard selectBrowserTabForSidebarAction() else {
             return

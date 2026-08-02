@@ -12,6 +12,7 @@ final class AppSettings: ObservableObject {
     private static let serverConnectionHistoryKey = "ServerConnectionHistory"
     private static let maximumConcurrentCopiedFilesKey = "MaximumConcurrentCopiedFiles"
     private static let visibleColumnsKey = "VisibleFileColumns"
+    private static let bandedFileRowsKey = "BandedFileRows"
     static let maximumConcurrentTabsRange = 5...50
     static let manualFolderHistoryLimitRange = 0...20
     static let maximumConcurrentCopiedFilesRange = 1...5
@@ -60,6 +61,12 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var showsBandedFileRows: Bool {
+        didSet {
+            UserDefaults.standard.set(showsBandedFileRows, forKey: Self.bandedFileRowsKey)
+        }
+    }
+
     @Published var visibleColumns: Set<FileColumn> {
         didSet {
             // "Name" can never be turned off, so at least one column always remains.
@@ -77,6 +84,7 @@ final class AppSettings: ObservableObject {
     private var appearanceObservation: NSObjectProtocol?
     private var volumeMountObservation: NSObjectProtocol?
     private var pendingServerConnections: [URL] = []
+    var onServerConnectionSucceeded: ((URL) -> Void)?
 
     init(defaults: UserDefaults = .standard) {
         let rawValue = defaults.string(forKey: Self.appearanceKey)
@@ -93,6 +101,7 @@ final class AppSettings: ObservableObject {
 
         let savedMaximumConcurrentCopiedFiles = defaults.object(forKey: Self.maximumConcurrentCopiedFilesKey) as? Int
         self.maximumConcurrentCopiedFiles = savedMaximumConcurrentCopiedFiles.map(Self.clampedMaximumConcurrentCopiedFiles) ?? 3
+        self.showsBandedFileRows = defaults.object(forKey: Self.bandedFileRowsKey) as? Bool ?? true
 
         if let savedColumns = defaults.stringArray(forKey: Self.visibleColumnsKey) {
             var columns = Set(savedColumns.compactMap(FileColumn.init(rawValue:)))
@@ -230,6 +239,7 @@ final class AppSettings: ObservableObject {
         serverConnectionHistory.removeAll { $0.caseInsensitiveCompare(address) == .orderedSame }
         serverConnectionHistory.insert(address, at: 0)
         trimServerConnectionHistory()
+        onServerConnectionSucceeded?(mountedVolumeURL)
         return true
     }
 

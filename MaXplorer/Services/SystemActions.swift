@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import NetFS
 
 enum SystemActions {
     static func open(_ url: URL) {
@@ -44,7 +45,20 @@ enum SystemActions {
     }
 
     static func connectToServer(_ url: URL) {
-        NSWorkspace.shared.open(url)
+        let openOptions = NSMutableDictionary()
+        openOptions[kNAUIOptionKey] = kNAUIOptionAllowUI
+        var requestID: AsyncRequestID?
+
+        NetFSMountURLAsync(
+            url as CFURL,
+            nil,
+            nil,
+            nil,
+            openOptions,
+            nil,
+            &requestID,
+            .main
+        ) { _, _, _ in }
     }
 
     static func revealInFinder(_ url: URL) {
