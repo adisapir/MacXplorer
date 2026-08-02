@@ -5,90 +5,83 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Picker("Appearance", selection: $settings.appearance) {
-                ForEach(AppAppearance.allCases) { appearance in
-                    Text(appearance.displayName)
-                        .tag(appearance)
-                }
-            }
-            .pickerStyle(.radioGroup)
-
-            Toggle("Banded file and folder rows", isOn: $settings.showsBandedFileRows)
-
-            HStack {
-                Text("Folder Icon Style")
-                Spacer()
-                Picker("Folder Icon Style", selection: $settings.folderIconStyle) {
-                    ForEach(FolderIconStyle.allCases) { style in
-                        Text(style.displayName)
-                            .tag(style)
+            Section("Appearance") {
+                Picker("Theme", selection: $settings.appearance) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.displayName)
+                            .tag(appearance)
                     }
                 }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 190)
+                .pickerStyle(.radioGroup)
+
+                Toggle("Banded file and folder rows", isOn: $settings.showsBandedFileRows)
+
+                HStack {
+                    Text("Folder Icon Style")
+                    Spacer()
+                    Picker("Folder Icon Style", selection: $settings.folderIconStyle) {
+                        ForEach(FolderIconStyle.allCases) { style in
+                            Text(style.displayName)
+                                .tag(style)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 230)
+                }
             }
 
-            Divider()
+            Section("Workspace") {
+                settingSlider(
+                    title: "Maximum number of concurrent tabs",
+                    value: $settings.maximumConcurrentTabs,
+                    range: AppSettings.maximumConcurrentTabsRange
+                )
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Maximum number of concurrent tabs")
-                    Spacer()
-                    Text("\(settings.maximumConcurrentTabs)")
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-
-                Slider(
-                    value: Binding(
-                        get: { Double(settings.maximumConcurrentTabs) },
-                        set: { settings.maximumConcurrentTabs = Int($0.rounded()) }
-                    ),
-                    in: Double(AppSettings.maximumConcurrentTabsRange.lowerBound)...Double(AppSettings.maximumConcurrentTabsRange.upperBound),
-                    step: 1
+                settingSlider(
+                    title: "Folders kept in navigation history",
+                    value: $settings.manualFolderHistoryLimit,
+                    range: AppSettings.manualFolderHistoryLimitRange
                 )
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Number of manually navigated folders to keep in history")
-                    Spacer()
-                    Text("\(settings.manualFolderHistoryLimit)")
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-
-                Slider(
-                    value: Binding(
-                        get: { Double(settings.manualFolderHistoryLimit) },
-                        set: { settings.manualFolderHistoryLimit = Int($0.rounded()) }
-                    ),
-                    in: Double(AppSettings.manualFolderHistoryLimitRange.lowerBound)...Double(AppSettings.manualFolderHistoryLimitRange.upperBound),
-                    step: 1
-                )
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Maximum number of concurrent copied files")
-                    Spacer()
-                    Text("\(settings.maximumConcurrentCopiedFiles)")
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-
-                Slider(
-                    value: Binding(
-                        get: { Double(settings.maximumConcurrentCopiedFiles) },
-                        set: { settings.maximumConcurrentCopiedFiles = Int($0.rounded()) }
-                    ),
-                    in: Double(AppSettings.maximumConcurrentCopiedFilesRange.lowerBound)...Double(AppSettings.maximumConcurrentCopiedFilesRange.upperBound),
-                    step: 1
+            Section("File Transfers") {
+                settingSlider(
+                    title: "Maximum number of concurrent copied files",
+                    value: $settings.maximumConcurrentCopiedFiles,
+                    range: AppSettings.maximumConcurrentCopiedFilesRange
                 )
             }
         }
-        .padding(20)
-        .frame(width: 420)
+        .formStyle(.grouped)
+        .padding(28)
+        .frame(width: 620)
+    }
+
+    private func settingSlider(
+        title: String,
+        value: Binding<Int>,
+        range: ClosedRange<Int>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text("\(value.wrappedValue)")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .frame(minWidth: 28, alignment: .trailing)
+            }
+
+            Slider(
+                value: Binding(
+                    get: { Double(value.wrappedValue) },
+                    set: { value.wrappedValue = Int($0.rounded()) }
+                ),
+                in: Double(range.lowerBound)...Double(range.upperBound),
+                step: 1
+            )
+        }
+        .padding(.vertical, 4)
     }
 }
