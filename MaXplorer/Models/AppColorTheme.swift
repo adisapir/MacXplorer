@@ -19,6 +19,16 @@ enum AppColorTheme: String, CaseIterable, Identifiable {
         }
     }
 
+    var settingsDisplayName: String {
+        switch self {
+        case .default: displayName
+        case .water: "💧 \(displayName)"
+        case .earth: "🌍 \(displayName)"
+        case .fire: "🔥 \(displayName)"
+        case .air: "🌬️ \(displayName)"
+        }
+    }
+
     var tintColor: Color {
         switch self {
         case .default: .accentColor

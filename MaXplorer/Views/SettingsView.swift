@@ -16,7 +16,7 @@ struct SettingsView: View {
 
                 Picker("Color Theme Element", selection: $settings.colorTheme) {
                     ForEach(AppColorTheme.allCases) { colorTheme in
-                        Text(colorTheme.displayName)
+                        Text(colorTheme.settingsDisplayName)
                             .tag(colorTheme)
                     }
                 }

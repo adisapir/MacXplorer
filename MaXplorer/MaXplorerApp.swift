@@ -20,7 +20,10 @@ struct MaXplorerApp: App {
                 .environment(\.appColorTheme, settings.colorTheme)
                 .preferredColorScheme(settings.preferredColorScheme)
                 .tint(settings.colorTheme.tintColor)
-                .background(WindowAppearanceBridge(colorScheme: settings.preferredColorScheme))
+                .background(WindowAppearanceBridge(
+                    colorScheme: settings.preferredColorScheme,
+                    colorTheme: settings.colorTheme
+                ))
                 .frame(minWidth: 980, minHeight: 620)
                 .onAppear {
                     tabs.updateMaximumConcurrentTabs(settings.maximumConcurrentTabs)
@@ -252,7 +255,10 @@ struct MaXplorerApp: App {
                 .environment(\.appColorTheme, settings.colorTheme)
                 .preferredColorScheme(settings.preferredColorScheme)
                 .tint(settings.colorTheme.tintColor)
-                .background(WindowAppearanceBridge(colorScheme: settings.preferredColorScheme))
+                .background(WindowAppearanceBridge(
+                    colorScheme: settings.preferredColorScheme,
+                    colorTheme: settings.colorTheme
+                ))
         }
     }
 
@@ -270,14 +276,16 @@ struct MaXplorerApp: App {
 
 private struct WindowAppearanceBridge: NSViewRepresentable {
     let colorScheme: ColorScheme
+    let colorTheme: AppColorTheme
 
     func makeNSView(context: Context) -> WindowAppearanceView {
-        WindowAppearanceView(colorScheme: colorScheme)
+        WindowAppearanceView(colorScheme: colorScheme, colorTheme: colorTheme)
     }
 
     func updateNSView(_ nsView: WindowAppearanceView, context: Context) {
-        guard nsView.colorScheme != colorScheme else { return }
+        guard nsView.colorScheme != colorScheme || nsView.colorTheme != colorTheme else { return }
         nsView.colorScheme = colorScheme
+        nsView.colorTheme = colorTheme
     }
 }
 
@@ -287,9 +295,15 @@ private final class WindowAppearanceView: NSView {
             applyAppearance()
         }
     }
+    var colorTheme: AppColorTheme {
+        didSet {
+            applyAppearance()
+        }
+    }
 
-    init(colorScheme: ColorScheme) {
+    init(colorScheme: ColorScheme, colorTheme: AppColorTheme) {
         self.colorScheme = colorScheme
+        self.colorTheme = colorTheme
         super.init(frame: .zero)
     }
 
@@ -305,7 +319,30 @@ private final class WindowAppearanceView: NSView {
 
     private func applyAppearance() {
         let appearanceName: NSAppearance.Name = colorScheme == .dark ? .darkAqua : .aqua
-        guard window?.appearance?.name != appearanceName else { return }
-        window?.appearance = NSAppearance(named: appearanceName)
+        if window?.appearance?.name != appearanceName {
+            window?.appearance = NSAppearance(named: appearanceName)
+        }
+
+        guard let window else { return }
+        window.titlebarAppearsTransparent = colorTheme != .default
+        window.backgroundColor = titlebarBackgroundColor
+    }
+
+    private var titlebarBackgroundColor: NSColor {
+        let base = colorScheme == .dark
+            ? NSColor(calibratedWhite: 0.12, alpha: 1)
+            : NSColor(calibratedWhite: 0.96, alpha: 1)
+
+        let accent: NSColor
+        switch colorTheme {
+        case .default: return base
+        case .water: accent = .systemBlue
+        case .earth: accent = .systemGreen
+        case .fire: accent = .systemOrange
+        case .air: accent = .systemGray
+        }
+
+        let fraction: CGFloat = colorTheme == .air ? 0.10 : 0.16
+        return base.blended(withFraction: fraction, of: accent) ?? base
     }
 }

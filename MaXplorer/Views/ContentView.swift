@@ -317,6 +317,8 @@ private struct QuickViewSheet: View {
 private struct BrowserTabStrip: View {
     @EnvironmentObject private var tabs: BrowserTabsViewModel
     @EnvironmentObject private var settings: AppSettings
+    @Environment(\.appColorTheme) private var colorTheme
+    @Environment(\.colorScheme) private var colorScheme
 
     // Chrome-like sizing: tabs share the available width but never grow past a
     // comfortable maximum, and shrink to fit as more tabs open.
@@ -418,6 +420,7 @@ private struct BrowserTabStrip: View {
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .background(.bar)
+            .background(colorTheme.surfaceTint(for: colorScheme, intensity: 0.7))
             .overlay(alignment: .bottom) {
                 Rectangle()
                     .fill(.separator.opacity(0.75))
@@ -455,6 +458,8 @@ private struct AddTabButton: View {
 
 private struct BrowserTabButton: View {
     @ObservedObject var model: FileBrowserViewModel
+    @Environment(\.appColorTheme) private var colorTheme
+    @Environment(\.colorScheme) private var colorScheme
     let isSelected: Bool
     let width: CGFloat
     let tabID: UUID
@@ -573,7 +578,7 @@ private struct BrowserTabButton: View {
 
     private var borderStyle: AnyShapeStyle {
         if isDropTargeted {
-            return AnyShapeStyle(Color.accentColor)
+            return AnyShapeStyle(colorTheme.tintColor)
         }
 
         if isSelected {
@@ -585,7 +590,7 @@ private struct BrowserTabButton: View {
 
     private var tabBackground: AnyShapeStyle {
         if isSelected {
-            return AnyShapeStyle(Color(nsColor: .controlBackgroundColor))
+            return AnyShapeStyle(colorTheme.surfaceTint(for: colorScheme, intensity: 1.5))
         }
 
         if isHovering {
@@ -622,6 +627,7 @@ private struct TabCloseButton: View {
 }
 
 private struct SpaceAnalyzerTabButton: View {
+    @Environment(\.appColorTheme) private var colorTheme
     let isSelected: Bool
     let isScanning: Bool
     let width: CGFloat
@@ -632,8 +638,6 @@ private struct SpaceAnalyzerTabButton: View {
 
     @State private var isHovering = false
     private let cornerRadius: CGFloat = 10
-    private let accentColor = Color.teal
-
     var body: some View {
         HStack(spacing: 2) {
             Button(action: onSelect) {
@@ -679,13 +683,13 @@ private struct SpaceAnalyzerTabButton: View {
     }
 
     private var tabBackground: AnyShapeStyle {
-        if isSelected { return AnyShapeStyle(accentColor.opacity(0.18)) }
-        if isHovering { return AnyShapeStyle(accentColor.opacity(0.09)) }
+        if isSelected { return AnyShapeStyle(colorTheme.tintColor.opacity(0.18)) }
+        if isHovering { return AnyShapeStyle(colorTheme.tintColor.opacity(0.09)) }
         return AnyShapeStyle(Color.clear)
     }
 
     private var borderStyle: AnyShapeStyle {
-        isSelected ? AnyShapeStyle(accentColor.opacity(0.5)) : AnyShapeStyle(Color.clear)
+        isSelected ? AnyShapeStyle(colorTheme.tintColor.opacity(0.5)) : AnyShapeStyle(Color.clear)
     }
 }
 
