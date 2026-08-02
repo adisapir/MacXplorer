@@ -256,6 +256,7 @@ final class CopyQueueViewModel: ObservableObject {
         let destinationURL = items[index].destinationURL
         let operation = items[index].operation
         let shouldOverwrite = items[index].shouldOverwrite
+        let progressThrottle = CopyProgressUpdateThrottle()
 
         tasks[itemID] = Task {
             do {
@@ -268,6 +269,9 @@ final class CopyQueueViewModel: ObservableObject {
                     destinationURL: destinationURL,
                     overwrite: shouldOverwrite
                 ) { [weak self] copiedBytes in
+                    guard progressThrottle.shouldPublish() else {
+                        return
+                    }
                     Task { @MainActor [weak self] in
                         self?.updateCopiedBytes(copiedBytes, for: itemID)
                     }
@@ -363,6 +367,24 @@ final class CopyQueueViewModel: ObservableObject {
 
         aggregateTotalItemCount += newItems.count
         items.append(contentsOf: newItems)
+    }
+}
+
+private final class CopyProgressUpdateThrottle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lastPublishTime = Date.distantPast
+
+    func shouldPublish() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let now = Date()
+        guard now.timeIntervalSince(lastPublishTime) >= 0.1 else {
+            return false
+        }
+
+        lastPublishTime = now
+        return true
     }
 }
 
