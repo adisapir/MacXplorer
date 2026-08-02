@@ -14,6 +14,13 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.radioGroup)
 
+                Picker("Color Theme Element", selection: $settings.colorTheme) {
+                    ForEach(AppColorTheme.allCases) { colorTheme in
+                        Text(colorTheme.displayName)
+                            .tag(colorTheme)
+                    }
+                }
+
                 Toggle("Banded file and folder rows", isOn: $settings.showsBandedFileRows)
 
                 HStack {

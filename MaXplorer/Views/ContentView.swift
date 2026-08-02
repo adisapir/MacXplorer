@@ -21,6 +21,7 @@ struct ContentView: View {
         .onDisappear {
             settings.onServerConnectionSucceeded = nil
         }
+        .background(ThemedSurfaceBackground(intensity: 0.55))
     }
 }
 
@@ -691,6 +692,8 @@ private struct SpaceAnalyzerTabButton: View {
 private struct SidebarView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
     @EnvironmentObject private var tabs: BrowserTabsViewModel
+    @Environment(\.appColorTheme) private var colorTheme
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("sidebar.favoritesExpanded") private var favoritesExpanded = true
     @AppStorage("sidebar.networkExpanded") private var networkExpanded = true
     private let copyQueueSelectionID = "maxplorer://copy-queue"
@@ -832,6 +835,7 @@ private struct SidebarView: View {
         }
         .symbolRenderingMode(.hierarchical)
         .background(.ultraThinMaterial)
+        .background(colorTheme.surfaceTint(for: colorScheme, intensity: 0.7))
     }
 
     private func handleFavoriteDrop(_ urls: [URL], before location: SidebarLocation) -> Bool {
@@ -1232,6 +1236,8 @@ private struct CopyQueueRow: View {
 
 private struct SettingsSurface: View {
     @EnvironmentObject private var model: FileBrowserViewModel
+    @Environment(\.appColorTheme) private var colorTheme
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ScrollView {
@@ -1240,7 +1246,7 @@ private struct SettingsSurface: View {
                     Image(systemName: "gearshape.fill")
                         .font(.system(size: 40, weight: .semibold))
                         .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(colorTheme.tintColor)
 
                     Text("Settings")
                         .font(.system(size: 30, weight: .bold, design: .rounded))
@@ -1276,7 +1282,7 @@ private struct SettingsSurface: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             LinearGradient(
-                colors: [Color.accentColor.opacity(0.12), Color.clear],
+                colors: [colorTheme.backdropTint(for: colorScheme), Color.clear],
                 startPoint: .top,
                 endPoint: .bottom
             )

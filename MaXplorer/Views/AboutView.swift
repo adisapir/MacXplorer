@@ -29,6 +29,8 @@ enum AppInfo {
 /// changelog in a popup sheet.
 struct AboutView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
+    @Environment(\.appColorTheme) private var colorTheme
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isChangelogPresented = false
     @State private var isReadmePresented = false
 
@@ -131,7 +133,7 @@ struct AboutView: View {
 
     private var backdrop: some View {
         LinearGradient(
-            colors: [Color.accentColor.opacity(0.16), Color.clear],
+            colors: [colorTheme.backdropTint(for: colorScheme), Color.clear],
             startPoint: .top,
             endPoint: .bottom
         )

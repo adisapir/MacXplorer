@@ -129,7 +129,7 @@ struct SpaceAnalyzerView: View {
             Divider()
             statsBar
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(ThemedSurfaceBackground())
     }
 
     // MARK: Toolbar

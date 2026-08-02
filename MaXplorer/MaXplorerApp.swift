@@ -17,7 +17,9 @@ struct MaXplorerApp: App {
             ContentView()
                 .environmentObject(tabs)
                 .environmentObject(settings)
+                .environment(\.appColorTheme, settings.colorTheme)
                 .preferredColorScheme(settings.preferredColorScheme)
+                .tint(settings.colorTheme.tintColor)
                 .background(WindowAppearanceBridge(colorScheme: settings.preferredColorScheme))
                 .frame(minWidth: 980, minHeight: 620)
                 .onAppear {
@@ -247,7 +249,9 @@ struct MaXplorerApp: App {
         Settings {
             SettingsView()
                 .environmentObject(settings)
+                .environment(\.appColorTheme, settings.colorTheme)
                 .preferredColorScheme(settings.preferredColorScheme)
+                .tint(settings.colorTheme.tintColor)
                 .background(WindowAppearanceBridge(colorScheme: settings.preferredColorScheme))
         }
     }
