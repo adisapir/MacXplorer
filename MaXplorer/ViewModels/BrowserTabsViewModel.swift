@@ -96,6 +96,22 @@ final class BrowserTabsViewModel: ObservableObject {
         activeModel.showCopyQueue()
     }
 
+    func showSettings() {
+        guard selectExistingBrowserTabForSidebarSurface() else {
+            return
+        }
+
+        activeModel.showSettings()
+    }
+
+    func showAbout() {
+        guard selectExistingBrowserTabForSidebarSurface() else {
+            return
+        }
+
+        activeModel.showAbout()
+    }
+
     /// Propagates the file-listing options (which slow columns to fetch) to
     /// every tab so switching tabs stays consistent.
     func applyListingOptions(_ options: DirectoryListingOptions) {
@@ -272,6 +288,19 @@ final class BrowserTabsViewModel: ObservableObject {
         }
 
         addTab()
+        return true
+    }
+
+    private func selectExistingBrowserTabForSidebarSurface() -> Bool {
+        guard isSpaceAnalyzerActive else {
+            return true
+        }
+
+        guard let browserTab = tabs.first(where: { $0.id != spaceAnalyzerTabID }) else {
+            return false
+        }
+
+        selectedTabID = browserTab.id
         return true
     }
 

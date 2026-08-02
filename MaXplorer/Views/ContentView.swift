@@ -706,9 +706,9 @@ private struct SidebarView: View {
                 case copyQueueSelectionID:
                     tabs.showCopyQueue()
                 case settingsSelectionID:
-                    model.showSettings()
+                    tabs.showSettings()
                 case aboutSelectionID:
-                    model.showAbout()
+                    tabs.showAbout()
                 default:
                     if let url = URL(string: selection) {
                         tabs.browseLocation(url)
