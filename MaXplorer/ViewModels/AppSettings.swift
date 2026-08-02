@@ -9,6 +9,7 @@ final class AppSettings: ObservableObject {
     private static let maximumConcurrentTabsKey = "MaximumConcurrentTabs"
     private static let manualFolderHistoryLimitKey = "ManualFolderHistoryLimit"
     private static let manualFolderHistoryKey = "ManualFolderHistory"
+    private static let serverConnectionHistoryKey = "ServerConnectionHistory"
     private static let maximumConcurrentCopiedFilesKey = "MaximumConcurrentCopiedFiles"
     private static let visibleColumnsKey = "VisibleFileColumns"
     static let maximumConcurrentTabsRange = 5...50
@@ -72,7 +73,10 @@ final class AppSettings: ObservableObject {
     }
 
     @Published private(set) var manualFolderHistory: [String]
+    @Published private(set) var serverConnectionHistory: [String]
     private var appearanceObservation: NSObjectProtocol?
+    private var volumeMountObservation: NSObjectProtocol?
+    private var pendingServerConnections: [URL] = []
 
     init(defaults: UserDefaults = .standard) {
         let rawValue = defaults.string(forKey: Self.appearanceKey)
@@ -85,6 +89,7 @@ final class AppSettings: ObservableObject {
         let savedManualFolderHistoryLimit = defaults.object(forKey: Self.manualFolderHistoryLimitKey) as? Int
         self.manualFolderHistoryLimit = savedManualFolderHistoryLimit.map(Self.clampedManualFolderHistoryLimit) ?? 5
         self.manualFolderHistory = defaults.stringArray(forKey: Self.manualFolderHistoryKey) ?? []
+        self.serverConnectionHistory = defaults.stringArray(forKey: Self.serverConnectionHistoryKey) ?? []
 
         let savedMaximumConcurrentCopiedFiles = defaults.object(forKey: Self.maximumConcurrentCopiedFilesKey) as? Int
         self.maximumConcurrentCopiedFiles = savedMaximumConcurrentCopiedFiles.map(Self.clampedMaximumConcurrentCopiedFiles) ?? 3
@@ -98,6 +103,7 @@ final class AppSettings: ObservableObject {
         }
 
         trimManualFolderHistory()
+        trimServerConnectionHistory()
         appearanceObservation = DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name("AppleInterfaceThemeChangedNotification"),
             object: nil,
@@ -105,6 +111,19 @@ final class AppSettings: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.systemColorScheme = Self.currentSystemColorScheme
+            }
+        }
+        volumeMountObservation = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didMountNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let mountedVolumeURL = notification.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL else {
+                return
+            }
+
+            Task { @MainActor [weak self] in
+                self?.recordPendingConnection(mountedAt: mountedVolumeURL)
             }
         }
     }
@@ -143,6 +162,21 @@ final class AppSettings: ObservableObject {
         trimManualFolderHistory()
     }
 
+    func expectServerConnection(to url: URL) {
+        let sanitizedURL = Self.sanitizedServerURL(url)
+        pendingServerConnections.removeAll { Self.serverURLsReferToSameShare($0, sanitizedURL) }
+        pendingServerConnections.append(sanitizedURL)
+
+        for mountedVolumeURL in FileManager.default.mountedVolumeURLs(
+            includingResourceValuesForKeys: [.volumeURLForRemountingKey],
+            options: [.skipHiddenVolumes]
+        ) ?? [] {
+            if recordPendingConnection(mountedAt: mountedVolumeURL) {
+                break
+            }
+        }
+    }
+
     private static func clampedTabLimit(_ value: Int) -> Int {
         min(max(value, maximumConcurrentTabsRange.lowerBound), maximumConcurrentTabsRange.upperBound)
     }
@@ -177,5 +211,68 @@ final class AppSettings: ObservableObject {
         }
         manualFolderHistory = Array(manualFolderHistory.prefix(manualFolderHistoryLimit))
         UserDefaults.standard.set(manualFolderHistory, forKey: Self.manualFolderHistoryKey)
+    }
+
+    @discardableResult
+    private func recordPendingConnection(mountedAt mountedVolumeURL: URL) -> Bool {
+        guard
+            let values = try? mountedVolumeURL.resourceValues(forKeys: [.volumeURLForRemountingKey]),
+            let remountURL = values.volumeURLForRemounting,
+            let pendingIndex = pendingServerConnections.firstIndex(where: {
+                Self.serverURLsReferToSameShare($0, remountURL)
+            })
+        else {
+            return false
+        }
+
+        let connectedURL = pendingServerConnections.remove(at: pendingIndex)
+        let address = connectedURL.absoluteString
+        serverConnectionHistory.removeAll { $0.caseInsensitiveCompare(address) == .orderedSame }
+        serverConnectionHistory.insert(address, at: 0)
+        trimServerConnectionHistory()
+        return true
+    }
+
+    private func trimServerConnectionHistory() {
+        var seenAddresses = Set<String>()
+        serverConnectionHistory = serverConnectionHistory.compactMap { address in
+            let comparisonAddress = address.lowercased()
+            guard seenAddresses.insert(comparisonAddress).inserted else {
+                return nil
+            }
+            return address
+        }
+        serverConnectionHistory = Array(serverConnectionHistory.prefix(20))
+        UserDefaults.standard.set(serverConnectionHistory, forKey: Self.serverConnectionHistoryKey)
+    }
+
+    private static func sanitizedServerURL(_ url: URL) -> URL {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url
+        }
+
+        components.password = nil
+        return components.url ?? url
+    }
+
+    private static func serverURLsReferToSameShare(_ lhs: URL, _ rhs: URL) -> Bool {
+        guard
+            let lhsComponents = URLComponents(url: lhs, resolvingAgainstBaseURL: false),
+            let rhsComponents = URLComponents(url: rhs, resolvingAgainstBaseURL: false),
+            lhsComponents.scheme?.caseInsensitiveCompare(rhsComponents.scheme ?? "") == .orderedSame,
+            lhsComponents.host?.caseInsensitiveCompare(rhsComponents.host ?? "") == .orderedSame
+        else {
+            return false
+        }
+
+        let lhsShare = firstPathComponent(of: lhsComponents.path)
+        let rhsShare = firstPathComponent(of: rhsComponents.path)
+        return lhsShare.isEmpty
+            || rhsShare.isEmpty
+            || lhsShare.caseInsensitiveCompare(rhsShare) == .orderedSame
+    }
+
+    private static func firstPathComponent(of path: String) -> String {
+        path.split(separator: "/", omittingEmptySubsequences: true).first.map(String.init) ?? ""
     }
 }

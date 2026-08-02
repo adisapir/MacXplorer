@@ -68,8 +68,13 @@ private struct ActiveBrowserView: View {
             }
         }
         .sheet(isPresented: $model.isConnectToServerPresented) {
-            ConnectToServerSheet(serverAddress: $serverAddress) {
-                model.connectToServer(serverAddress)
+            ConnectToServerSheet(
+                serverAddress: $serverAddress,
+                history: settings.serverConnectionHistory
+            ) {
+                model.connectToServer(serverAddress) { serverURL in
+                    settings.expectServerConnection(to: serverURL)
+                }
             } onCancel: {
                 model.isConnectToServerPresented = false
             }
@@ -680,18 +685,16 @@ private struct SidebarView: View {
     @AppStorage("sidebar.favoritesExpanded") private var favoritesExpanded = true
     @AppStorage("sidebar.networkExpanded") private var networkExpanded = true
     private let copyQueueSelectionID = "maxplorer://copy-queue"
-    private let settingsSelectionID = "maxplorer://settings"
-    private let aboutSelectionID = "maxplorer://about"
     private let spaceAnalyzerSelectionID = "maxplorer://space-analyzer"
 
     var body: some View {
-        List(selection: Binding(
+        VStack(spacing: 0) {
+            List(selection: Binding<String?>(
             get: {
                 if tabs.isSpaceAnalyzerActive { return spaceAnalyzerSelectionID }
                 switch model.detailDestination {
                 case .copyQueue: return copyQueueSelectionID
-                case .settings: return settingsSelectionID
-                case .about: return aboutSelectionID
+                case .settings, .about: return nil
                 case .files: return model.currentURL.absoluteString
                 }
             },
@@ -705,10 +708,6 @@ private struct SidebarView: View {
                     tabs.openSpaceAnalyzer()
                 case copyQueueSelectionID:
                     tabs.showCopyQueue()
-                case settingsSelectionID:
-                    tabs.showSettings()
-                case aboutSelectionID:
-                    tabs.showAbout()
                 default:
                     if let url = URL(string: selection) {
                         tabs.browseLocation(url)
@@ -796,24 +795,30 @@ private struct SidebarView: View {
                 CopyQueueSidebarRow(queue: model.copyQueue)
                     .tag(copyQueueSelectionID)
             }
-
-            Section {
-                Divider()
-                    .listRowSeparator(.hidden)
-                    .padding(.vertical, 2)
-
-                Label("Settings", systemImage: "gearshape")
-                    .foregroundStyle(.blue)
-                    .sidebarHover()
-                    .tag(settingsSelectionID)
-
-                Label("About", systemImage: "info.circle")
-                    .foregroundStyle(.blue)
-                    .sidebarHover()
-                    .tag(aboutSelectionID)
             }
+            .listStyle(.sidebar)
+
+            Divider()
+
+            VStack(spacing: 2) {
+                SidebarDockedButton(
+                    title: "Settings",
+                    systemImage: "gearshape",
+                    isSelected: !tabs.isSpaceAnalyzerActive && model.detailDestination == .settings,
+                    action: tabs.showSettings
+                )
+
+                SidebarDockedButton(
+                    title: "About",
+                    systemImage: "info.circle",
+                    isSelected: !tabs.isSpaceAnalyzerActive && model.detailDestination == .about,
+                    action: tabs.showAbout
+                )
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background(.bar)
         }
-        .listStyle(.sidebar)
         .symbolRenderingMode(.hierarchical)
     }
 
@@ -831,6 +836,35 @@ private struct SidebarView: View {
         }
 
         return didHandle
+    }
+}
+
+private struct SidebarDockedButton: View {
+    let title: String
+    let systemImage: String
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .padding(.vertical, 5)
+                .padding(.horizontal, 7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.blue)
+        .background {
+            if isSelected || isHovering {
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(Color.primary.opacity(isSelected ? 0.12 : 0.07))
+            }
+        }
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .animation(.easeOut(duration: 0.12), value: isSelected)
     }
 }
 
@@ -2078,6 +2112,7 @@ private struct RenameSheet: View {
 
 private struct ConnectToServerSheet: View {
     @Binding var serverAddress: String
+    let history: [String]
     let onConnect: () -> Void
     let onCancel: () -> Void
 
@@ -2090,10 +2125,13 @@ private struct ConnectToServerSheet: View {
             Text("Connect to Server")
                 .font(.headline)
 
-            TextField("smb://server/share", text: $serverAddress)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 390)
-                .onSubmit(onConnect)
+            HistoryComboBox(
+                text: $serverAddress,
+                history: history,
+                prompt: "smb://server/share",
+                onCommit: onConnect
+            )
+                .frame(width: 390, height: 26)
 
             HStack {
                 Spacer()
@@ -2123,7 +2161,7 @@ private struct GoToFolderSheet: View {
             Text("Go to Folder")
                 .font(.headline)
 
-            ManualFolderComboBox(text: $folderPath, history: history, onCommit: onGo)
+            HistoryComboBox(text: $folderPath, history: history, onCommit: onGo)
                 .frame(width: 420, height: 26)
 
             if let errorMessage {
@@ -2144,70 +2182,52 @@ private struct GoToFolderSheet: View {
     }
 }
 
-private struct ManualFolderComboBox: NSViewRepresentable {
+private struct HistoryComboBox: View {
     @Binding var text: String
     let history: [String]
+    var prompt = "Path"
     let onCommit: () -> Void
+    @FocusState private var isFocused: Bool
 
-    func makeNSView(context: Context) -> NSComboBox {
-        let comboBox = NSComboBox()
-        comboBox.usesDataSource = false
-        comboBox.completes = false
-        comboBox.numberOfVisibleItems = 8
-        comboBox.delegate = context.coordinator
-        return comboBox
-    }
+    var body: some View {
+        HStack(spacing: 0) {
+            TextField(prompt, text: $text)
+                .textFieldStyle(.plain)
+                .focused($isFocused)
+                .onSubmit(onCommit)
 
-    func updateNSView(_ nsView: NSComboBox, context: Context) {
-        context.coordinator.text = $text
-        context.coordinator.onCommit = onCommit
+            Divider()
+                .frame(height: 16)
 
-        if nsView.objectValue as? String != text {
-            nsView.objectValue = text
-        }
-
-        nsView.removeAllItems()
-        nsView.addItems(withObjectValues: history)
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, onCommit: onCommit)
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, NSComboBoxDelegate {
-        var text: Binding<String>
-        var onCommit: () -> Void
-
-        init(text: Binding<String>, onCommit: @escaping () -> Void) {
-            self.text = text
-            self.onCommit = onCommit
-        }
-
-        func controlTextDidChange(_ notification: Notification) {
-            guard let comboBox = notification.object as? NSComboBox else {
-                return
+            Menu {
+                if history.isEmpty {
+                    Text("No previous connections")
+                } else {
+                    ForEach(history, id: \.self) { address in
+                        Button(address) {
+                            text = address
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(history.isEmpty ? .tertiary : .secondary)
+                    .frame(width: 28, height: 24)
+                    .contentShape(Rectangle())
             }
-
-            text.wrappedValue = comboBox.stringValue
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
         }
-
-        func comboBoxSelectionDidChange(_ notification: Notification) {
-            guard let comboBox = notification.object as? NSComboBox else {
-                return
-            }
-
-            text.wrappedValue = comboBox.stringValue
-        }
-
-        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
-                return false
-            }
-
-            text.wrappedValue = control.stringValue
-            onCommit()
-            return true
+        .padding(.leading, 7)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(
+                    isFocused ? Color.accentColor : Color(nsColor: .separatorColor),
+                    lineWidth: isFocused ? 2 : 1
+                )
         }
     }
 }

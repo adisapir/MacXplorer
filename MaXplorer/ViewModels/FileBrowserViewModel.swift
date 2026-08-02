@@ -498,12 +498,13 @@ final class FileBrowserViewModel: ObservableObject {
         isConnectToServerPresented = true
     }
 
-    func connectToServer(_ address: String) {
+    func connectToServer(_ address: String, onValidated: (URL) -> Void = { _ in }) {
         guard let serverURL = Self.serverURL(from: address) else {
             errorMessage = "Enter a valid server address, such as smb://server/share."
             return
         }
 
+        onValidated(serverURL)
         connectToServer(serverURL)
     }
 
