@@ -72,13 +72,14 @@ final class FileBrowserViewModel: ObservableObject {
     private var destinationBeforeAuxiliaryDetail: DetailDestination = .files
     private var listingOptions = DirectoryListingOptions()
     private var conflictSession: ConflictSession?
+    private var conflictPreparationGeneration = 0
     private var folderMonitor: DispatchSourceFileSystemObject?
     private var monitorReloadTask: Task<Void, Never>?
     private var clipboardObservation: AnyCancellable?
     private var favoritesObservation: AnyCancellable?
 
     private struct ConflictSession {
-        enum Operation {
+        nonisolated enum Operation: Sendable {
             case copy(maximumConcurrentCopies: Int)
             case move(shouldClearCut: Bool)
         }
@@ -88,6 +89,11 @@ final class FileBrowserViewModel: ObservableObject {
         var approvedItems: [(source: URL, shouldOverwrite: Bool)]
         var remainingConflictIndices: [Int]
         let totalConflicts: Int
+    }
+
+    private struct ConflictPreflightResult: Sendable {
+        let approvedSources: [URL]
+        let conflictIndices: [Int]
     }
 
     init(fileSystem: FileSystemService, fileClipboard: FileClipboard, favoritesStore: FavoritesStore) {
@@ -812,28 +818,52 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     private func beginConflictResolution(sources: [URL], to destinationDirectory: URL, operation: ConflictSession.Operation) {
-        var approved: [(source: URL, shouldOverwrite: Bool)] = []
-        var conflictIndices: [Int] = []
+        conflictPreparationGeneration += 1
+        let generation = conflictPreparationGeneration
 
-        for (i, source) in sources.enumerated() {
+        Task { [weak self] in
+            let preflight = await Task.detached(priority: .utility) {
+                Self.preflightConflicts(sources: sources, destinationDirectory: destinationDirectory)
+            }.value
+
+            guard let self, generation == self.conflictPreparationGeneration else {
+                return
+            }
+
+            self.conflictSession = ConflictSession(
+                allSources: sources,
+                destinationDirectory: destinationDirectory,
+                operation: operation,
+                approvedItems: preflight.approvedSources.map { ($0, false) },
+                remainingConflictIndices: preflight.conflictIndices,
+                totalConflicts: preflight.conflictIndices.count
+            )
+
+            self.showNextConflictOrExecute()
+        }
+    }
+
+    nonisolated private static func preflightConflicts(
+        sources: [URL],
+        destinationDirectory: URL
+    ) -> ConflictPreflightResult {
+        var approvedSources: [URL] = []
+        var conflictIndices: [Int] = []
+        approvedSources.reserveCapacity(sources.count)
+
+        for (index, source) in sources.enumerated() {
             let destination = destinationDirectory.appendingPathComponent(source.lastPathComponent)
             if FileManager.default.fileExists(atPath: destination.path) {
-                conflictIndices.append(i)
+                conflictIndices.append(index)
             } else {
-                approved.append((source, false))
+                approvedSources.append(source)
             }
         }
 
-        conflictSession = ConflictSession(
-            allSources: sources,
-            destinationDirectory: destinationDirectory,
-            operation: operation,
-            approvedItems: approved,
-            remainingConflictIndices: conflictIndices,
-            totalConflicts: conflictIndices.count
+        return ConflictPreflightResult(
+            approvedSources: approvedSources,
+            conflictIndices: conflictIndices
         )
-
-        showNextConflictOrExecute()
     }
 
     private func showNextConflictOrExecute() {

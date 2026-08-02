@@ -52,7 +52,7 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Number of manual folder to keep in history")
+                    Text("Number of manually navigated folders to keep in history")
                     Spacer()
                     Text("\(settings.manualFolderHistoryLimit)")
                         .foregroundStyle(.secondary)
