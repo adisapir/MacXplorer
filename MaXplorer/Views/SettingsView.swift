@@ -15,6 +15,22 @@ struct SettingsView: View {
 
             Toggle("Banded file and folder rows", isOn: $settings.showsBandedFileRows)
 
+            HStack {
+                Text("Folder Icon Style")
+                Spacer()
+                Picker("Folder Icon Style", selection: $settings.folderIconStyle) {
+                    ForEach(FolderIconStyle.allCases) { style in
+                        Text(style.displayName)
+                            .tag(style)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 190)
+            }
+
+            Divider()
+
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Maximum number of concurrent tabs")

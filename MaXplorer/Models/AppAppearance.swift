@@ -29,3 +29,17 @@ enum AppAppearance: String, CaseIterable, Identifiable {
         }
     }
 }
+
+enum FolderIconStyle: String, CaseIterable, Identifiable {
+    case mac
+    case xplorer
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .mac: "Mac"
+        case .xplorer: "Xplorer"
+        }
+    }
+}

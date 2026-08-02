@@ -1902,7 +1902,7 @@ private struct FileTableView: View {
     private func nameCell(for item: FileItem) -> some View {
         let isFolderTarget = folderDropTargetID == item.id
         HStack(spacing: 8) {
-            FileItemIcon(item: item)
+            FileItemIcon(item: item, folderIconStyle: settings.folderIconStyle)
             Text(item.name).lineLimit(1)
             Spacer(minLength: 0)
         }
@@ -2121,6 +2121,7 @@ private final class TableCellClickTargetNSView: NSView {
 
 private struct FileItemIcon: View {
     let item: FileItem
+    let folderIconStyle: FolderIconStyle
 
     var body: some View {
         Group {
@@ -2129,6 +2130,11 @@ private struct FileItemIcon: View {
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.mint)
                     .font(.system(size: 15, weight: .semibold))
+            } else if item.isDirectory && folderIconStyle == .xplorer {
+                Image(systemName: "folder.fill")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.yellow)
+                    .font(.system(size: 17, weight: .medium))
             } else {
                 // NSWorkspace returns the exact same icon Finder shows:
                 // correct type-specific icons for documents, apps, aliases (with

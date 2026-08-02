@@ -13,6 +13,7 @@ final class AppSettings: ObservableObject {
     private static let maximumConcurrentCopiedFilesKey = "MaximumConcurrentCopiedFiles"
     private static let visibleColumnsKey = "VisibleFileColumns"
     private static let bandedFileRowsKey = "BandedFileRows"
+    private static let folderIconStyleKey = "FolderIconStyle"
     static let maximumConcurrentTabsRange = 5...50
     static let manualFolderHistoryLimitRange = 0...20
     static let maximumConcurrentCopiedFilesRange = 1...5
@@ -67,6 +68,12 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var folderIconStyle: FolderIconStyle {
+        didSet {
+            UserDefaults.standard.set(folderIconStyle.rawValue, forKey: Self.folderIconStyleKey)
+        }
+    }
+
     @Published var visibleColumns: Set<FileColumn> {
         didSet {
             // "Name" can never be turned off, so at least one column always remains.
@@ -102,6 +109,8 @@ final class AppSettings: ObservableObject {
         let savedMaximumConcurrentCopiedFiles = defaults.object(forKey: Self.maximumConcurrentCopiedFilesKey) as? Int
         self.maximumConcurrentCopiedFiles = savedMaximumConcurrentCopiedFiles.map(Self.clampedMaximumConcurrentCopiedFiles) ?? 3
         self.showsBandedFileRows = defaults.object(forKey: Self.bandedFileRowsKey) as? Bool ?? true
+        self.folderIconStyle = defaults.string(forKey: Self.folderIconStyleKey)
+            .flatMap(FolderIconStyle.init(rawValue:)) ?? .mac
 
         if let savedColumns = defaults.stringArray(forKey: Self.visibleColumnsKey) {
             var columns = Set(savedColumns.compactMap(FileColumn.init(rawValue:)))
