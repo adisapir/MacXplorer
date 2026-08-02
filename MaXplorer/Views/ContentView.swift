@@ -1935,7 +1935,7 @@ private struct FileTableView: View {
     }
 
     private func rowClickTarget(for item: FileItem) -> some View {
-        TableCellClickTarget(showsGridLines: settings.showsBandedFileRows) { mode in
+        TableCellClickTarget { mode in
             model.select(item, mode: mode)
         } onOpen: {
             model.selectedItemIDs = [item.id]
@@ -1999,7 +1999,6 @@ private struct StatusBar: View {
 }
 
 private struct TableCellClickTarget: NSViewRepresentable {
-    let showsGridLines: Bool
     let onSelect: (SelectionMode) -> Void
     let onOpen: () -> Void
     let onLongPress: () -> Void
@@ -2009,7 +2008,6 @@ private struct TableCellClickTarget: NSViewRepresentable {
         view.onSelect = onSelect
         view.onOpen = onOpen
         view.onLongPress = onLongPress
-        view.showsGridLines = showsGridLines
         return view
     }
 
@@ -2017,13 +2015,10 @@ private struct TableCellClickTarget: NSViewRepresentable {
         nsView.onSelect = onSelect
         nsView.onOpen = onOpen
         nsView.onLongPress = onLongPress
-        nsView.showsGridLines = showsGridLines
-        nsView.updateGridStyle()
     }
 }
 
 private final class TableCellClickTargetNSView: NSView {
-    var showsGridLines = true
     var onSelect: (SelectionMode) -> Void = { _ in }
     var onOpen: () -> Void = {}
     var onLongPress: () -> Void = {}
@@ -2031,52 +2026,6 @@ private final class TableCellClickTargetNSView: NSView {
     private var longPressTimer: Timer?
 
     override var acceptsFirstResponder: Bool { true }
-
-    override func viewDidMoveToSuperview() {
-        super.viewDidMoveToSuperview()
-        DispatchQueue.main.async { [weak self] in
-            self?.updateGridStyle()
-        }
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        DispatchQueue.main.async { [weak self] in
-            self?.updateGridStyle()
-        }
-    }
-
-    func updateGridStyle() {
-        if !showsGridLines, let contentView = window?.contentView {
-            removeGridLines(in: contentView)
-            return
-        }
-
-        var ancestor = superview
-        while let view = ancestor {
-            if let tableView = view as? NSTableView {
-                let desiredStyle: NSTableView.GridLineStyle = showsGridLines ? [.solidHorizontalGridLineMask] : []
-                tableView.gridColor = .gridColor
-                guard tableView.gridStyleMask != desiredStyle else {
-                    tableView.needsDisplay = true
-                    return
-                }
-                tableView.gridStyleMask = desiredStyle
-                tableView.needsDisplay = true
-                return
-            }
-            ancestor = view.superview
-        }
-    }
-
-    private func removeGridLines(in view: NSView) {
-        if let tableView = view as? NSTableView {
-            tableView.gridStyleMask = []
-            tableView.gridColor = .clear
-            tableView.needsDisplay = true
-        }
-        view.subviews.forEach(removeGridLines(in:))
-    }
 
     override func mouseDown(with event: NSEvent) {
         if event.modifierFlags.contains(.shift) {
