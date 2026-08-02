@@ -163,7 +163,10 @@ struct MarkdownDocumentView: View {
                 .font(.system(.body, design: .monospaced))
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                .background {
+                    ThemedSurfaceBackground()
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
                 .overlay {
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
@@ -186,7 +189,7 @@ struct MarkdownDocumentView: View {
                         .padding(.vertical, 7)
                 }
             }
-            .background(Color(nsColor: .controlBackgroundColor))
+            .background(ThemedControlBackground())
 
             Divider()
 
@@ -199,7 +202,11 @@ struct MarkdownDocumentView: View {
                             .padding(.vertical, 5)
                     }
                 }
-                .background(idx % 2 == 1 ? Color(nsColor: .controlBackgroundColor).opacity(0.5) : Color.clear)
+                .background {
+                    if idx % 2 == 1 {
+                        ThemedControlBackground().opacity(0.5)
+                    }
+                }
 
                 if idx < rows.count - 1 {
                     Divider().opacity(0.4)

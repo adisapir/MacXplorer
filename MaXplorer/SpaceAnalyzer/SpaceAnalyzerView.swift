@@ -156,7 +156,7 @@ struct SpaceAnalyzerView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.bar)
+        .background(ThemedBarBackground())
     }
 
     // MARK: Content area
@@ -229,7 +229,7 @@ struct SpaceAnalyzerView: View {
         .font(.footnote)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(.bar)
+        .background(ThemedBarBackground())
     }
 }
 
@@ -248,7 +248,7 @@ private struct TreemapCanvas: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
-                Color(nsColor: .windowBackgroundColor)
+                ThemedSurfaceBackground()
                 ForEach(tileList, id: \.node.id) { item in
                     TileView(node: item.node, size: item.frame.size, categories: categories, tabs: tabs)
                         .frame(width: item.frame.width, height: item.frame.height)

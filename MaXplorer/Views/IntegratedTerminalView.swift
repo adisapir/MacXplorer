@@ -5,6 +5,8 @@ import SwiftTerm
 struct IntegratedTerminalView: View {
     let directoryURL: URL
     let onClose: () -> Void
+    @Environment(\.appColorTheme) private var colorTheme
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,20 +29,42 @@ struct IntegratedTerminalView: View {
             .font(.system(size: 11))
             .padding(.horizontal, 10)
             .frame(height: 30)
-            .background(.bar)
+            .background(ThemedBarBackground())
 
-            SwiftTermSurface(directoryURL: directoryURL, onExit: onClose)
+            SwiftTermSurface(
+                directoryURL: directoryURL,
+                onExit: onClose,
+                backgroundColor: terminalBackgroundColor
+            )
                 .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.leading, 10)
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(ThemedContentBackground())
         .frame(minWidth: 0, maxWidth: .infinity)
+    }
+
+    private var terminalBackgroundColor: NSColor {
+        let base = colorScheme == .dark
+            ? NSColor(calibratedWhite: 0.12, alpha: 1)
+            : NSColor(calibratedWhite: 0.98, alpha: 1)
+        let accent: NSColor
+
+        switch colorTheme {
+        case .default: return base
+        case .water: accent = .systemBlue
+        case .earth: accent = .systemGreen
+        case .fire: accent = .systemOrange
+        case .air: accent = .systemGray
+        }
+
+        return base.blended(withFraction: colorScheme == .dark ? 0.12 : 0.08, of: accent) ?? base
     }
 }
 
 private struct SwiftTermSurface: NSViewRepresentable {
     let directoryURL: URL
     let onExit: () -> Void
+    let backgroundColor: NSColor
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onExit: onExit)
@@ -50,8 +74,8 @@ private struct SwiftTermSurface: NSViewRepresentable {
         let terminal = LocalProcessTerminalView(frame: .zero)
         terminal.processDelegate = context.coordinator
         terminal.nativeForegroundColor = .textColor
-        terminal.nativeBackgroundColor = .textBackgroundColor
-        terminal.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+        terminal.nativeBackgroundColor = backgroundColor
+        terminal.layer?.backgroundColor = backgroundColor.cgColor
         terminal.caretColor = .controlAccentColor
         terminal.getTerminal().setCursorStyle(.steadyBlock)
 
@@ -71,6 +95,8 @@ private struct SwiftTermSurface: NSViewRepresentable {
 
     func updateNSView(_ terminal: LocalProcessTerminalView, context: Context) {
         context.coordinator.onExit = onExit
+        terminal.nativeBackgroundColor = backgroundColor
+        terminal.layer?.backgroundColor = backgroundColor.cgColor
     }
 
     static func dismantleNSView(_ terminal: LocalProcessTerminalView, coordinator: Coordinator) {

@@ -93,3 +93,51 @@ struct ThemedSurfaceBackground: View {
         }
     }
 }
+
+struct ThemedBarBackground: View {
+    @Environment(\.appColorTheme) private var colorTheme
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack {
+            if colorTheme.usesElevatedTransparency {
+                Rectangle().fill(.ultraThinMaterial)
+            } else {
+                Color(nsColor: .controlBackgroundColor)
+            }
+            colorTheme.surfaceTint(for: colorScheme, intensity: 0.75)
+        }
+    }
+}
+
+struct ThemedContentBackground: View {
+    @Environment(\.appColorTheme) private var colorTheme
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack {
+            if colorTheme.usesElevatedTransparency {
+                Rectangle().fill(.ultraThinMaterial)
+            } else {
+                Color(nsColor: .textBackgroundColor)
+            }
+            colorTheme.surfaceTint(for: colorScheme, intensity: 0.5)
+        }
+    }
+}
+
+struct ThemedControlBackground: View {
+    @Environment(\.appColorTheme) private var colorTheme
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack {
+            if colorTheme.usesElevatedTransparency {
+                Rectangle().fill(.thinMaterial)
+            } else {
+                Color(nsColor: .controlBackgroundColor)
+            }
+            colorTheme.surfaceTint(for: colorScheme, intensity: 0.9)
+        }
+    }
+}

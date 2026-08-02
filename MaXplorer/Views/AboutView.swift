@@ -228,7 +228,7 @@ private struct ChangelogSheet: View {
                     .keyboardShortcut(.defaultAction)
             }
             .padding(16)
-            .background(.bar)
+            .background(ThemedBarBackground())
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
@@ -239,7 +239,7 @@ private struct ChangelogSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(20)
             }
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(ThemedContentBackground())
         }
         .frame(minWidth: 560, minHeight: 460)
         .background(
@@ -354,13 +354,13 @@ struct ReadmeSheet: View {
                     .keyboardShortcut(.defaultAction)
             }
             .padding(16)
-            .background(.bar)
+            .background(ThemedBarBackground())
 
             ScrollView {
                 MarkdownDocumentView(markdown: markdown)
                     .padding(20)
             }
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(ThemedContentBackground())
         }
         .frame(minWidth: 640, minHeight: 520)
         .background(

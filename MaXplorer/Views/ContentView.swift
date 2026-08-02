@@ -298,7 +298,7 @@ private struct QuickViewSheet: View {
                     .keyboardShortcut(.defaultAction)
             }
             .padding(16)
-            .background(.bar)
+            .background(ThemedBarBackground())
 
             ScrollView {
                 Text(content.text)
@@ -308,7 +308,7 @@ private struct QuickViewSheet: View {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .padding(16)
             }
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(ThemedContentBackground())
         }
         .frame(minWidth: 680, minHeight: 460)
     }
@@ -419,8 +419,7 @@ private struct BrowserTabStrip: View {
             }
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(.bar)
-            .background(colorTheme.surfaceTint(for: colorScheme, intensity: 0.7))
+            .background(ThemedBarBackground())
             .overlay(alignment: .bottom) {
                 Rectangle()
                     .fill(.separator.opacity(0.75))
@@ -838,8 +837,7 @@ private struct SidebarView: View {
             .padding(.vertical, 7)
         }
         .symbolRenderingMode(.hierarchical)
-        .background(.ultraThinMaterial)
-        .background(colorTheme.surfaceTint(for: colorScheme, intensity: 0.7))
+        .background(ThemedBarBackground())
     }
 
     private func handleFavoriteDrop(_ urls: [URL], before location: SidebarLocation) -> Bool {
@@ -1103,7 +1101,7 @@ private struct BrowserToolbar: View {
             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
         }
         .padding(12)
-        .background(.bar)
+        .background(ThemedBarBackground())
         .onExitCommand {
             pathFocused = false
         }
@@ -1126,7 +1124,7 @@ private struct CopyQueueView: View {
                     .monospacedDigit()
             }
             .padding(16)
-            .background(.bar)
+            .background(ThemedBarBackground())
 
             if queue.items.isEmpty {
                 ContentUnavailableView(
@@ -1677,6 +1675,8 @@ private struct FileTableView: View {
             }
             .alternatingRowBackgrounds(settings.showsBandedFileRows ? .enabled : .disabled)
             .listRowSeparator(settings.showsBandedFileRows ? .visible : .hidden)
+            .scrollContentBackground(.hidden)
+            .background(ThemedContentBackground())
             .dropDestination(for: URL.self) { urls, _ in
                 model.importItems(urls, maximumConcurrentCopies: settings.maximumConcurrentCopiedFiles)
                 return true
@@ -1790,7 +1790,10 @@ private struct FileTableView: View {
                 ProgressView()
                     .controlSize(.large)
                     .padding(22)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .background {
+                        ThemedControlBackground()
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
             } else if model.displayedItems.isEmpty {
                 ContentUnavailableView(
                     model.filterText.isEmpty ? "No Items" : "No Matching Items",
@@ -2004,7 +2007,7 @@ private struct StatusBar: View {
         .font(.footnote)
         .padding(.horizontal, 26)
         .padding(.vertical, 7)
-        .background(.bar)
+        .background(ThemedBarBackground())
     }
 }
 
@@ -2251,7 +2254,7 @@ private struct HistoryComboBox: View {
             .menuIndicator(.hidden)
         }
         .padding(.leading, 7)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(ThemedControlBackground())
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .overlay {
             RoundedRectangle(cornerRadius: 6)
