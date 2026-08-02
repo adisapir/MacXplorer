@@ -237,7 +237,7 @@ private struct ActiveBrowserView: View {
                 }
             }
         }
-        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 300)
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 300, alignment: .leading)
     }
 
     private var copyConflictTitle: String {
@@ -327,6 +327,7 @@ private struct BrowserTabStrip: View {
                             width: tabWidth,
                             tabID: tab.id,
                             onSelect: { tabs.selectTab(tab.id) },
+                            onClose: { tabs.closeSpaceAnalyzer() },
                             onReorder: { draggedID in tabs.moveTab(draggedID, before: tab.id) }
                         )
                         .contextMenu {
@@ -338,7 +339,9 @@ private struct BrowserTabStrip: View {
                             isSelected: tab.id == tabs.selectedTabID,
                             width: tabWidth,
                             tabID: tab.id,
+                            canClose: tabs.tabs.count > 1,
                             onSelect: { tabs.selectTab(tab.id) },
+                            onClose: { tabs.closeTab(tab.id) },
                             onReorder: { draggedID in tabs.moveTab(draggedID, before: tab.id) },
                             onDropFiles: { droppedURLs in
                                 // Expand a single dragged URL to the full selection of whatever
@@ -440,7 +443,9 @@ private struct BrowserTabButton: View {
     let isSelected: Bool
     let width: CGFloat
     let tabID: UUID
+    let canClose: Bool
     let onSelect: () -> Void
+    let onClose: () -> Void
     let onReorder: (UUID) -> Void
     let onDropFiles: ([URL]) -> Void
 
@@ -451,25 +456,32 @@ private struct BrowserTabButton: View {
     private let cornerRadius: CGFloat = 10
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 6) {
-                if width >= 62 {
-                    Image(systemName: model.isBrowsingNetwork ? "network" : "folder.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .symbolRenderingMode(.hierarchical)
-                }
+        HStack(spacing: 2) {
+            Button(action: onSelect) {
+                HStack(spacing: 6) {
+                    if width >= 62 {
+                        Image(systemName: model.isBrowsingNetwork ? "network" : "folder.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .symbolRenderingMode(.hierarchical)
+                    }
 
-                Text(model.tabTitle)
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(model.tabTitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, max(7, min(11, width / 12)))
-            .frame(width: width, height: 26, alignment: .leading)
-            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            TabCloseButton(isEnabled: canClose, action: onClose)
         }
-        .buttonStyle(.plain)
+        .padding(.leading, max(7, min(11, width / 12)))
+        .padding(.trailing, 5)
+        .frame(width: width, height: 26, alignment: .leading)
+        .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
         .foregroundStyle(isSelected ? .primary : .secondary)
         .background(tabBackground, in: RoundedRectangle(cornerRadius: cornerRadius))
         .overlay {
@@ -569,12 +581,38 @@ private struct BrowserTabButton: View {
     }
 }
 
+private struct TabCloseButton: View {
+    let isEnabled: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 9, weight: .bold))
+                .frame(width: 17, height: 17)
+                .background(
+                    isHovering && isEnabled ? Color.primary.opacity(0.12) : .clear,
+                    in: Circle()
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .foregroundStyle(isEnabled ? .secondary : .quaternary)
+        .onHover { isHovering = $0 }
+        .accessibilityLabel("Close Tab")
+        .modernTooltip(isEnabled ? "Close Tab" : "At least one tab must remain open")
+    }
+}
+
 private struct SpaceAnalyzerTabButton: View {
     let isSelected: Bool
     let isScanning: Bool
     let width: CGFloat
     let tabID: UUID
     let onSelect: () -> Void
+    let onClose: () -> Void
     let onReorder: (UUID) -> Void
 
     @State private var isHovering = false
@@ -582,24 +620,31 @@ private struct SpaceAnalyzerTabButton: View {
     private let accentColor = Color.teal
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 6) {
-                if isScanning {
-                    ProgressView().controlSize(.mini).frame(width: 11, height: 11)
-                } else if width >= 62 {
-                    SpaceAnalyzerIcon(size: 11)
+        HStack(spacing: 2) {
+            Button(action: onSelect) {
+                HStack(spacing: 6) {
+                    if isScanning {
+                        ProgressView().controlSize(.mini).frame(width: 11, height: 11)
+                    } else if width >= 62 {
+                        SpaceAnalyzerIcon(size: 11)
+                    }
+                    Text(isScanning ? "Scanning…" : "Space Analyzer")
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Text(isScanning ? "Scanning…" : "Space Analyzer")
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, max(7, min(11, width / 12)))
-            .frame(width: width, height: 26, alignment: .leading)
-            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            TabCloseButton(isEnabled: true, action: onClose)
         }
-        .buttonStyle(.plain)
+        .padding(.leading, max(7, min(11, width / 12)))
+        .padding(.trailing, 5)
+        .frame(width: width, height: 26, alignment: .leading)
+        .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
         .foregroundStyle(isSelected ? .primary : .secondary)
         .background(tabBackground, in: RoundedRectangle(cornerRadius: cornerRadius))
         .overlay {
@@ -769,7 +814,6 @@ private struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .padding(.leading, 12)
         .symbolRenderingMode(.hierarchical)
     }
 
@@ -1490,9 +1534,9 @@ private struct SidebarHoverModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 3)
             .padding(.horizontal, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 if isHovering {
                     RoundedRectangle(cornerRadius: 7)

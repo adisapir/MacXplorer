@@ -272,6 +272,7 @@ private struct WindowAppearanceBridge: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: WindowAppearanceView, context: Context) {
+        guard nsView.colorScheme != colorScheme else { return }
         nsView.colorScheme = colorScheme
     }
 }
@@ -300,8 +301,7 @@ private final class WindowAppearanceView: NSView {
 
     private func applyAppearance() {
         let appearanceName: NSAppearance.Name = colorScheme == .dark ? .darkAqua : .aqua
-        let resolvedAppearance = NSAppearance(named: appearanceName)
-        window?.appearance = resolvedAppearance
-        appearance = resolvedAppearance
+        guard window?.appearance?.name != appearanceName else { return }
+        window?.appearance = NSAppearance(named: appearanceName)
     }
 }
