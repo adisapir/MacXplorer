@@ -1,5 +1,15 @@
 # Change Log
 
+## 2026-08-03 — v1.06
+
+- Added an Appearance settings group with light, dark, and system modes; optional banded file rows; and Mac-style or Xplorer-style folder icons.
+- Added app-wide element color themes: Default, 💧 Water, 🌍 Earth, 🔥 Fire, and 🌬️ Air. Themes extend across the window, title bar, tabs, sidebar, toolbars, sheets, file surfaces, Space Analyzer, and integrated terminal; Air adds a more transparent treatment.
+- Improved the Settings layout with wider controls and separate Appearance, Workspace, and File Transfers groups.
+- Added close controls to browser tabs and fixed sidebar sizing, selection state, and its persistent Settings/About controls.
+- Remember successful server connections for quick reconnection and open connected locations in new MaXplorer tabs.
+- Kept copy and move startup responsive, particularly for network destinations, by moving conflict preflight work off the main thread and coalescing progress updates.
+- Refreshed README feature coverage.
+
 ## 2026-07-29 — v1.05
 
 - Added favorites persistence and integrated favorite paths with browser tabs and file browser navigation.
