@@ -61,7 +61,7 @@ final class FileBrowserViewModel: ObservableObject {
     @Published var isReadmePresented = false
 
     let fileSystem: any FileSystemService
-    let copyQueue = CopyQueueViewModel()
+    let copyQueue: CopyQueueViewModel
     private let fileClipboard: FileClipboard
     private let favoritesStore: FavoritesStore
     private let networkBrowser = NetworkBrowserService()
@@ -96,21 +96,27 @@ final class FileBrowserViewModel: ObservableObject {
         let conflictIndices: [Int]
     }
 
-    init(fileSystem: FileSystemService, fileClipboard: FileClipboard, favoritesStore: FavoritesStore) {
+    init(
+        fileSystem: FileSystemService,
+        fileClipboard: FileClipboard,
+        favoritesStore: FavoritesStore,
+        copyQueue: CopyQueueViewModel
+    ) {
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
         self.fileSystem = fileSystem
         self.fileClipboard = fileClipboard
         self.favoritesStore = favoritesStore
+        self.copyQueue = copyQueue
         self.currentURL = homeURL
         self.pathText = homeURL.path
-        self.copyQueue.onItemCompleted = { [weak self] destinationURL in
+        self.copyQueue.observeItemCompletions { [weak self] destinationURL in
             guard let self, destinationURL.deletingLastPathComponent().standardizedFileURL == self.currentURL.standardizedFileURL else {
                 return
             }
 
             Task { await self.refreshAfterCompletedItem(destinationURL) }
         }
-        self.copyQueue.onMoveCompleted = { [weak self] sourceURL in
+        self.copyQueue.observeMoveCompletions { [weak self] sourceURL in
             self?.clearCutItems(containing: [sourceURL])
         }
         self.clipboardObservation = fileClipboard.objectWillChange.sink { [weak self] _ in

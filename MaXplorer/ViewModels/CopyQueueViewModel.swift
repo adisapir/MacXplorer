@@ -66,8 +66,8 @@ struct CopyQueueItem: Identifiable, Equatable {
 final class CopyQueueViewModel: ObservableObject {
     @Published private(set) var items: [CopyQueueItem] = []
 
-    var onItemCompleted: ((URL) -> Void)?
-    var onMoveCompleted: ((URL) -> Void)?
+    private var itemCompletionObservers: [(URL) -> Void] = []
+    private var moveCompletionObservers: [(URL) -> Void] = []
 
     var maximumConcurrentCopies = 3 {
         didSet {
@@ -104,6 +104,14 @@ final class CopyQueueViewModel: ObservableObject {
             1,
             (Double(aggregateFinishedItemCount) + activeProgress) / Double(aggregateTotalItemCount)
         )
+    }
+
+    func observeItemCompletions(_ observer: @escaping (URL) -> Void) {
+        itemCompletionObservers.append(observer)
+    }
+
+    func observeMoveCompletions(_ observer: @escaping (URL) -> Void) {
+        moveCompletionObservers.append(observer)
     }
 
     func enqueue(_ sources: [URL], to destinationDirectory: URL, conflictResolution: CopyConflictResolution) {
@@ -295,7 +303,8 @@ final class CopyQueueViewModel: ObservableObject {
     }
 
     private func updateCopiedBytes(_ copiedBytes: Int64, for itemID: CopyQueueItem.ID) {
-        guard let index = items.firstIndex(where: { $0.id == itemID }) else {
+        guard let index = items.firstIndex(where: { $0.id == itemID }),
+              items[index].state == .running else {
             return
         }
 
@@ -318,9 +327,9 @@ final class CopyQueueViewModel: ObservableObject {
         let operation = items[index].operation
         items.remove(at: index)
         aggregateFinishedItemCount += 1
-        onItemCompleted?(destinationURL)
+        itemCompletionObservers.forEach { $0(destinationURL) }
         if operation == .move {
-            onMoveCompleted?(sourceURL)
+            moveCompletionObservers.forEach { $0(sourceURL) }
         }
         startAvailableCopies()
     }
@@ -390,9 +399,14 @@ private final class CopyProgressUpdateThrottle: @unchecked Sendable {
 
 private enum CopyWorker {
     static func totalByteCount(for url: URL) async throws -> Int64 {
-        try await Task.detached(priority: .utility) {
+        let worker = Task.detached(priority: .utility) {
             try byteCount(for: url)
-        }.value
+        }
+        return try await withTaskCancellationHandler {
+            try await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
     }
 
     static func perform(
@@ -402,7 +416,7 @@ private enum CopyWorker {
         overwrite: Bool,
         progress: @escaping @Sendable (Int64) -> Void
     ) async throws {
-        try await Task.detached(priority: .utility) {
+        let worker = Task.detached(priority: .utility) {
             if operation == .move,
                try !requiresCopyForMove(from: sourceURL, to: destinationURL.deletingLastPathComponent()) {
                 if FileManager.default.fileExists(atPath: destinationURL.path), overwrite {
@@ -443,7 +457,12 @@ private enum CopyWorker {
                     throw error
                 }
             }
-        }.value
+        }
+        try await withTaskCancellationHandler {
+            try await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
     }
 
     nonisolated private static func requiresCopyForMove(

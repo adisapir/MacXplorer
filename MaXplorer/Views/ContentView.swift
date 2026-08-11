@@ -760,19 +760,38 @@ private struct SidebarView: View {
                 _ = model.pinDroppedFavorites(urls)
             }
 
-            Section(SidebarLocation.Group.devices.rawValue) {
-                ForEach(model.sidebarLocations.filter { $0.group == .devices }) { location in
-                    Label(location.name, systemImage: location.systemImage)
-                        .sidebarHover()
-                        .tag(location.url.absoluteString)
-                        .contextMenu {
-                            if location.url.isFileURL {
-                                Button("Analyze Space under Selected Folder") {
-                                    tabs.openSpaceAnalyzer(url: location.url)
+            if model.sidebarLocations.contains(where: { $0.group == .devices }) {
+                Section(SidebarLocation.Group.devices.rawValue) {
+                    ForEach(model.sidebarLocations.filter { $0.group == .devices }) { location in
+                        Label(location.name, systemImage: location.systemImage)
+                            .sidebarHover()
+                            .tag(location.url.absoluteString)
+                            .contextMenu {
+                                if location.url.isFileURL {
+                                    Button("Analyze Space under Selected Folder") {
+                                        tabs.openSpaceAnalyzer(url: location.url)
+                                    }
                                 }
                             }
-                        }
+                    }
                 }
+            }
+
+            Section("Disk") {
+                Button {
+                    tabs.openSpaceAnalyzer()
+                } label: {
+                    HStack(spacing: 6) {
+                        SpaceAnalyzerIcon(size: 15)
+                        Text("Space Analyzer")
+                    }
+                }
+                .buttonStyle(.plain)
+                .sidebarHover()
+                .tag(spaceAnalyzerSelectionID)
+
+                CopyQueueSidebarRow(queue: model.copyQueue)
+                    .tag(copyQueueSelectionID)
             }
 
             Section(isExpanded: $networkExpanded) {
@@ -792,24 +811,6 @@ private struct SidebarView: View {
                 Text(SidebarLocation.Group.network.rawValue)
             }
 
-            Section("Disk") {
-                Button {
-                    tabs.openSpaceAnalyzer()
-                } label: {
-                    HStack(spacing: 6) {
-                        SpaceAnalyzerIcon(size: 15)
-                        Text("Space Analyzer")
-                    }
-                }
-                .buttonStyle(.plain)
-                .sidebarHover()
-                .tag(spaceAnalyzerSelectionID)
-            }
-
-            Section("Copy Queue") {
-                CopyQueueSidebarRow(queue: model.copyQueue)
-                    .tag(copyQueueSelectionID)
-            }
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
@@ -1198,8 +1199,8 @@ private struct CopyQueueRow: View {
             return item.operation == .move ? "Moving" : "Copying"
         case .completed:
             return "Complete"
-        case .failed:
-            return "Failed"
+        case .failed(let reason):
+            return "Aborted: \(reason)"
         case .cancelled:
             return "Cancelled"
         }

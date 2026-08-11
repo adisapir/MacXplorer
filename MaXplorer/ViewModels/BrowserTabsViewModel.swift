@@ -32,13 +32,20 @@ final class BrowserTabsViewModel: ObservableObject {
     private var listingOptions = DirectoryListingOptions()
     private let fileClipboard: FileClipboard
     private let favoritesStore: FavoritesStore
+    private let copyQueue: CopyQueueViewModel
 
     init(maximumConcurrentTabs: Int = 20) {
         let fileClipboard = FileClipboard()
         let favoritesStore = FavoritesStore()
-        let initialTab = Self.makeTab(fileClipboard: fileClipboard, favoritesStore: favoritesStore)
+        let copyQueue = CopyQueueViewModel()
+        let initialTab = Self.makeTab(
+            fileClipboard: fileClipboard,
+            favoritesStore: favoritesStore,
+            copyQueue: copyQueue
+        )
         self.fileClipboard = fileClipboard
         self.favoritesStore = favoritesStore
+        self.copyQueue = copyQueue
         self.tabs = [initialTab]
         self.selectedTabID = initialTab.id
         self.maximumConcurrentTabs = Self.clampedTabLimit(maximumConcurrentTabs)
@@ -72,7 +79,7 @@ final class BrowserTabsViewModel: ObservableObject {
             return
         }
 
-        let tab = Self.makeTab(fileClipboard: fileClipboard, favoritesStore: favoritesStore)
+        let tab = makeTab()
         tab.model.setListingOptions(listingOptions)
         tab.model.showHiddenFiles = showHiddenFiles
         tab.model.showAliases = showAliases
@@ -94,7 +101,7 @@ final class BrowserTabsViewModel: ObservableObject {
             return
         }
 
-        let tab = Self.makeTab(fileClipboard: fileClipboard, favoritesStore: favoritesStore)
+        let tab = makeTab()
         tab.model.setListingOptions(listingOptions)
         tab.model.showHiddenFiles = showHiddenFiles
         tab.model.showAliases = showAliases
@@ -198,7 +205,7 @@ final class BrowserTabsViewModel: ObservableObject {
     func duplicateTab(_ tabID: BrowserTab.ID) {
         guard canAddTab, let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
         let source = tabs[index]
-        let tab = Self.makeTab(fileClipboard: fileClipboard, favoritesStore: favoritesStore)
+        let tab = makeTab()
         tab.model.setListingOptions(listingOptions)
         tab.model.showHiddenFiles = showHiddenFiles
         tab.model.showAliases = showAliases
@@ -248,7 +255,7 @@ final class BrowserTabsViewModel: ObservableObject {
             if let url { spaceAnalyzerViewModel.startScan(url: url) }
             return
         }
-        let tab = Self.makeTab(fileClipboard: fileClipboard, favoritesStore: favoritesStore)
+        let tab = makeTab()
         tabs.insert(tab, at: 0)
         selectedTabID = tab.id
         spaceAnalyzerTabID = tab.id
@@ -282,13 +289,22 @@ final class BrowserTabsViewModel: ObservableObject {
         selectedTabID = tabs[nextIndex].id
     }
 
-    static func makeTab(fileClipboard: FileClipboard, favoritesStore: FavoritesStore) -> BrowserTab {
+    private func makeTab() -> BrowserTab {
+        Self.makeTab(fileClipboard: fileClipboard, favoritesStore: favoritesStore, copyQueue: copyQueue)
+    }
+
+    static func makeTab(
+        fileClipboard: FileClipboard,
+        favoritesStore: FavoritesStore,
+        copyQueue: CopyQueueViewModel
+    ) -> BrowserTab {
         BrowserTab(
             id: UUID(),
             model: FileBrowserViewModel(
                 fileSystem: LocalFileSystemService(),
                 fileClipboard: fileClipboard,
-                favoritesStore: favoritesStore
+                favoritesStore: favoritesStore,
+                copyQueue: copyQueue
             )
         )
     }

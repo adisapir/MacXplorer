@@ -14,6 +14,5 @@
         - 3. Don't modify `CHANGELOG.md` 
         - If option 2 is selected, let the user review/edit/approve the Agent's suggestion
         - Wait for use input before merging.
-    - Run generate-oui-vendors.py
     - Run build-distribution.sh as last step
 - Don't add "Co-Authored-By: " signatures (Agent generated) to commits, MRs
