@@ -58,6 +58,12 @@ struct SettingsView: View {
                     value: $settings.maximumConcurrentCopiedFiles,
                     range: AppSettings.maximumConcurrentCopiedFilesRange
                 )
+
+                settingSlider(
+                    title: "Files kept in transfer history",
+                    value: $settings.transferHistoryLimit,
+                    range: AppSettings.transferHistoryLimitRange
+                )
             }
         }
         .formStyle(.grouped)

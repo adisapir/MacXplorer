@@ -24,7 +24,7 @@ struct MaXplorerApp: App {
                     colorScheme: settings.preferredColorScheme,
                     colorTheme: settings.colorTheme
                 ))
-                .frame(minWidth: 980, minHeight: 620)
+                .frame(minWidth: 1120, minHeight: 620)
                 .onAppear {
                     tabs.updateMaximumConcurrentTabs(settings.maximumConcurrentTabs)
                     tabs.applyListingOptions(DirectoryListingOptions(columns: settings.visibleColumns))
@@ -36,6 +36,7 @@ struct MaXplorerApp: App {
                     tabs.applyListingOptions(DirectoryListingOptions(columns: visibleColumns))
                 }
         }
+        .defaultSize(width: 1180, height: 720)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About MaXplorer") {

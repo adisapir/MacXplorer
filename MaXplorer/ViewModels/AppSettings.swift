@@ -11,6 +11,7 @@ final class AppSettings: ObservableObject {
     private static let manualFolderHistoryKey = "ManualFolderHistory"
     private static let serverConnectionHistoryKey = "ServerConnectionHistory"
     private static let maximumConcurrentCopiedFilesKey = "MaximumConcurrentCopiedFiles"
+    private static let transferHistoryLimitKey = "TransferHistoryLimit"
     private static let visibleColumnsKey = "VisibleFileColumns"
     private static let bandedFileRowsKey = "BandedFileRows"
     private static let folderIconStyleKey = "FolderIconStyle"
@@ -18,6 +19,7 @@ final class AppSettings: ObservableObject {
     static let maximumConcurrentTabsRange = 5...50
     static let manualFolderHistoryLimitRange = 0...20
     static let maximumConcurrentCopiedFilesRange = 1...5
+    static let transferHistoryLimitRange = 0...500
 
     @Published var appearance: AppAppearance {
         didSet {
@@ -60,6 +62,18 @@ final class AppSettings: ObservableObject {
             }
 
             UserDefaults.standard.set(maximumConcurrentCopiedFiles, forKey: Self.maximumConcurrentCopiedFilesKey)
+        }
+    }
+
+    @Published var transferHistoryLimit: Int {
+        didSet {
+            let clampedValue = Self.clampedTransferHistoryLimit(transferHistoryLimit)
+            guard transferHistoryLimit == clampedValue else {
+                transferHistoryLimit = clampedValue
+                return
+            }
+
+            UserDefaults.standard.set(transferHistoryLimit, forKey: Self.transferHistoryLimitKey)
         }
     }
 
@@ -115,6 +129,8 @@ final class AppSettings: ObservableObject {
 
         let savedMaximumConcurrentCopiedFiles = defaults.object(forKey: Self.maximumConcurrentCopiedFilesKey) as? Int
         self.maximumConcurrentCopiedFiles = savedMaximumConcurrentCopiedFiles.map(Self.clampedMaximumConcurrentCopiedFiles) ?? 3
+        let savedTransferHistoryLimit = defaults.object(forKey: Self.transferHistoryLimitKey) as? Int
+        self.transferHistoryLimit = savedTransferHistoryLimit.map(Self.clampedTransferHistoryLimit) ?? 100
         self.showsBandedFileRows = defaults.object(forKey: Self.bandedFileRowsKey) as? Bool ?? true
         self.folderIconStyle = defaults.string(forKey: Self.folderIconStyleKey)
             .flatMap(FolderIconStyle.init(rawValue:)) ?? .mac
@@ -214,6 +230,10 @@ final class AppSettings: ObservableObject {
 
     private static func clampedMaximumConcurrentCopiedFiles(_ value: Int) -> Int {
         min(max(value, maximumConcurrentCopiedFilesRange.lowerBound), maximumConcurrentCopiedFilesRange.upperBound)
+    }
+
+    private static func clampedTransferHistoryLimit(_ value: Int) -> Int {
+        min(max(value, transferHistoryLimitRange.lowerBound), transferHistoryLimitRange.upperBound)
     }
 
     private static var currentSystemColorScheme: ColorScheme {

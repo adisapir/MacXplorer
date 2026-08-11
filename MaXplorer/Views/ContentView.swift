@@ -161,9 +161,13 @@ private struct ActiveBrowserView: View {
         }
         .onAppear {
             model.copyQueue.maximumConcurrentCopies = settings.maximumConcurrentCopiedFiles
+            model.copyQueue.historyLimit = settings.transferHistoryLimit
         }
         .onChange(of: settings.maximumConcurrentCopiedFiles) { _, maximumConcurrentCopiedFiles in
             model.copyQueue.maximumConcurrentCopies = maximumConcurrentCopiedFiles
+        }
+        .onChange(of: settings.transferHistoryLimit) { _, transferHistoryLimit in
+            model.copyQueue.historyLimit = transferHistoryLimit
         }
         .onChange(of: model.renameRequest) { _, item in
             guard let item else {
@@ -1091,12 +1095,13 @@ private struct BrowserToolbar: View {
                         placeholder: "Filter current folder",
                         proxy: model.filterFocusProxy
                     )
-                    .frame(width: 220)
+                    .frame(minWidth: 160, idealWidth: 220, maxWidth: 220)
                 }
                 .font(.system(size: 13, weight: .medium))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
+                .layoutPriority(1)
                 .modernTooltip("Filter items shown in the current folder")
             }
             .symbolRenderingMode(.hierarchical)
@@ -1153,23 +1158,72 @@ private struct CopyQueueView: View {
             .padding(16)
             .background(ThemedBarBackground())
 
-            if queue.items.isEmpty {
+            if queue.items.isEmpty && queue.history.isEmpty {
                 ContentUnavailableView(
                     "No Copy Operations",
                     systemImage: "doc.on.clipboard",
-                    description: Text("Copied files will appear here while they are being copied.")
+                    description: Text("Active transfers and completed history will appear here.")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List(queue.items) { item in
-                    CopyQueueRow(item: item) {
-                        queue.cancel(item.id)
+                List {
+                    if !queue.items.isEmpty {
+                        Section("Tasks") {
+                            ForEach(queue.items) { item in
+                                CopyQueueRow(item: item) {
+                                    queue.cancel(item.id)
+                                }
+                                .listRowInsets(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14))
+                            }
+                        }
                     }
-                    .listRowInsets(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14))
+
+                    if !queue.history.isEmpty {
+                        Section("History") {
+                            ForEach(queue.history) { item in
+                                CopyQueueHistoryRow(item: item)
+                                    .listRowInsets(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14))
+                            }
+                        }
+                    }
                 }
                 .listStyle(.plain)
             }
         }
+    }
+}
+
+private struct CopyQueueHistoryRow: View {
+    let item: CopyQueueHistoryItem
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: item.operation == .move ? "arrow.right.doc.on.clipboard" : "doc.on.doc")
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Text(item.destinationURL.path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(item.operation == .move ? "Moved" : "Copied")
+                Text(item.completedAt, style: .time)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

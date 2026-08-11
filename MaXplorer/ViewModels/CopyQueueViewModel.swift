@@ -62,9 +62,20 @@ struct CopyQueueItem: Identifiable, Equatable {
     }
 }
 
+struct CopyQueueHistoryItem: Identifiable, Equatable {
+    let id: UUID
+    let sourceURL: URL
+    let destinationURL: URL
+    let name: String
+    let operation: CopyQueueOperation
+    let totalBytes: Int64
+    let completedAt: Date
+}
+
 @MainActor
 final class CopyQueueViewModel: ObservableObject {
     @Published private(set) var items: [CopyQueueItem] = []
+    @Published private(set) var history: [CopyQueueHistoryItem] = []
 
     private var itemCompletionObservers: [(URL) -> Void] = []
     private var moveCompletionObservers: [(URL) -> Void] = []
@@ -73,6 +84,13 @@ final class CopyQueueViewModel: ObservableObject {
         didSet {
             maximumConcurrentCopies = min(max(maximumConcurrentCopies, 1), 5)
             startAvailableCopies()
+        }
+    }
+
+    var historyLimit = 100 {
+        didSet {
+            historyLimit = min(max(historyLimit, 0), 500)
+            trimHistory()
         }
     }
 
@@ -325,7 +343,20 @@ final class CopyQueueViewModel: ObservableObject {
         let sourceURL = items[index].sourceURL
         let destinationURL = items[index].destinationURL
         let operation = items[index].operation
+        let historyItem = CopyQueueHistoryItem(
+            id: UUID(),
+            sourceURL: sourceURL,
+            destinationURL: destinationURL,
+            name: items[index].name,
+            operation: operation,
+            totalBytes: items[index].totalBytes,
+            completedAt: Date()
+        )
         items.remove(at: index)
+        if historyLimit > 0 {
+            history.insert(historyItem, at: 0)
+            trimHistory()
+        }
         aggregateFinishedItemCount += 1
         itemCompletionObservers.forEach { $0(destinationURL) }
         if operation == .move {
@@ -377,6 +408,12 @@ final class CopyQueueViewModel: ObservableObject {
         aggregateTotalItemCount += newItems.count
         items.append(contentsOf: newItems)
     }
+
+    private func trimHistory() {
+        if history.count > historyLimit {
+            history = Array(history.prefix(historyLimit))
+        }
+    }
 }
 
 private final class CopyProgressUpdateThrottle: @unchecked Sendable {
@@ -388,7 +425,7 @@ private final class CopyProgressUpdateThrottle: @unchecked Sendable {
         defer { lock.unlock() }
 
         let now = Date()
-        guard now.timeIntervalSince(lastPublishTime) >= 0.1 else {
+        guard now.timeIntervalSince(lastPublishTime) >= 0.25 else {
             return false
         }
 
@@ -398,9 +435,16 @@ private final class CopyProgressUpdateThrottle: @unchecked Sendable {
 }
 
 private enum CopyWorker {
+    /// SMB metadata and streaming calls can monopolize several kernel worker
+    /// threads at once even when Swift tasks use a low priority. Keep remote
+    /// filesystem work on one lane so AppKit input and drawing stay responsive.
+    private static let networkIOLock = NSLock()
+
     static func totalByteCount(for url: URL) async throws -> Int64 {
-        let worker = Task.detached(priority: .utility) {
-            try byteCount(for: url)
+        let worker = Task.detached(priority: .background) {
+            try withNetworkIOLaneIfNeeded(for: [url]) {
+                try byteCount(for: url)
+            }
         }
         return try await withTaskCancellationHandler {
             try await worker.value
@@ -416,45 +460,50 @@ private enum CopyWorker {
         overwrite: Bool,
         progress: @escaping @Sendable (Int64) -> Void
     ) async throws {
-        let worker = Task.detached(priority: .utility) {
-            if operation == .move,
-               try !requiresCopyForMove(from: sourceURL, to: destinationURL.deletingLastPathComponent()) {
-                if FileManager.default.fileExists(atPath: destinationURL.path), overwrite {
-                    try FileManager.default.removeItem(at: destinationURL)
-                }
-                do {
-                    try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
-                    progress(try byteCount(for: destinationURL))
-                    return
-                } catch {
-                    guard isCrossDeviceMoveError(error) else {
-                        throw error
+        let worker = Task.detached(priority: .background) {
+            let destinationDirectory = destinationURL.deletingLastPathComponent()
+            let isNetworkTransfer = usesRemoteMountedVolume([sourceURL, destinationDirectory])
+            try withNetworkIOLane(isRequired: isNetworkTransfer) {
+                if operation == .move,
+                   try !requiresCopyForMove(from: sourceURL, to: destinationDirectory) {
+                    if FileManager.default.fileExists(atPath: destinationURL.path), overwrite {
+                        try FileManager.default.removeItem(at: destinationURL)
+                    }
+                    do {
+                        try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
+                        progress(try byteCount(for: destinationURL))
+                        return
+                    } catch {
+                        guard isCrossDeviceMoveError(error) else {
+                            throw error
+                        }
                     }
                 }
-            }
 
-            var copiedBytes: Int64 = 0
-            do {
-                try copyItem(
-                    sourceURL,
-                    to: destinationURL,
-                    overwrite: overwrite,
-                    copiedBytes: &copiedBytes,
-                    progress: progress
-                )
-            } catch {
-                if operation == .move {
-                    try? FileManager.default.removeItem(at: destinationURL)
-                }
-                throw error
-            }
-
-            if operation == .move {
+                var copiedBytes: Int64 = 0
                 do {
-                    try FileManager.default.removeItem(at: sourceURL)
+                    try copyItem(
+                        sourceURL,
+                        to: destinationURL,
+                        overwrite: overwrite,
+                        isNetworkTransfer: isNetworkTransfer,
+                        copiedBytes: &copiedBytes,
+                        progress: progress
+                    )
                 } catch {
-                    try? FileManager.default.removeItem(at: destinationURL)
+                    if operation == .move {
+                        try? FileManager.default.removeItem(at: destinationURL)
+                    }
                     throw error
+                }
+
+                if operation == .move {
+                    do {
+                        try FileManager.default.removeItem(at: sourceURL)
+                    } catch {
+                        try? FileManager.default.removeItem(at: destinationURL)
+                        throw error
+                    }
                 }
             }
         }
@@ -462,6 +511,40 @@ private enum CopyWorker {
             try await worker.value
         } onCancel: {
             worker.cancel()
+        }
+    }
+
+    nonisolated private static func withNetworkIOLaneIfNeeded<T>(
+        for urls: [URL],
+        operation: () throws -> T
+    ) throws -> T {
+        try withNetworkIOLane(isRequired: usesRemoteMountedVolume(urls), operation: operation)
+    }
+
+    nonisolated private static func withNetworkIOLane<T>(
+        isRequired: Bool,
+        operation: () throws -> T
+    ) throws -> T {
+        guard isRequired else {
+            return try operation()
+        }
+
+        networkIOLock.lock()
+        defer { networkIOLock.unlock() }
+        try Task.checkCancellation()
+        return try operation()
+    }
+
+    nonisolated private static func usesRemoteMountedVolume(_ urls: [URL]) -> Bool {
+        urls.contains { url in
+            let values = try? url.resourceValues(forKeys: [.volumeURLKey, .volumeIsLocalKey])
+            if let isLocal = values?.volumeIsLocal {
+                return !isLocal
+            }
+            guard let volumeURL = values?.volume else {
+                return false
+            }
+            return (try? volumeURL.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal) == false
         }
     }
 
@@ -502,21 +585,23 @@ private enum CopyWorker {
         }
 
         if isDirectory.boolValue {
-            let urls = FileManager.default.enumerator(
+            guard let enumerator = FileManager.default.enumerator(
                 at: url,
                 includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey],
                 options: [.skipsHiddenFiles]
-            )?.compactMap { $0 as? URL } ?? []
+            ) else {
+                return 0
+            }
 
-            return try urls.reduce(Int64(0)) { partialResult, childURL in
+            var totalBytes: Int64 = 0
+            while let childURL = enumerator.nextObject() as? URL {
                 try Task.checkCancellation()
                 let values = try childURL.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey])
-                guard values.isDirectory != true else {
-                    return partialResult
+                if values.isDirectory != true {
+                    totalBytes += Int64(values.fileSize ?? 0)
                 }
-
-                return partialResult + Int64(values.fileSize ?? 0)
             }
+            return totalBytes
         }
 
         let values = try url.resourceValues(forKeys: [.fileSizeKey])
@@ -527,6 +612,7 @@ private enum CopyWorker {
         _ sourceURL: URL,
         to destinationURL: URL,
         overwrite: Bool,
+        isNetworkTransfer: Bool,
         copiedBytes: inout Int64,
         progress: @escaping @Sendable (Int64) -> Void
     ) throws {
@@ -557,6 +643,7 @@ private enum CopyWorker {
                     child,
                     to: destinationURL.appendingPathComponent(child.lastPathComponent),
                     overwrite: overwrite,
+                    isNetworkTransfer: isNetworkTransfer,
                     copiedBytes: &copiedBytes,
                     progress: progress
                 )
@@ -598,6 +685,9 @@ private enum CopyWorker {
             try destinationHandle.write(contentsOf: data)
             copiedBytes += Int64(data.count)
             progress(copiedBytes)
+            if isNetworkTransfer {
+                Thread.sleep(forTimeInterval: 0.001)
+            }
         }
     }
 }
