@@ -481,6 +481,7 @@ private enum CopyWorker {
                 }
 
                 var copiedBytes: Int64 = 0
+                let destinationExistedBeforeCopy = FileManager.default.fileExists(atPath: destinationURL.path)
                 do {
                     try copyItem(
                         sourceURL,
@@ -491,7 +492,10 @@ private enum CopyWorker {
                         progress: progress
                     )
                 } catch {
-                    if operation == .move {
+                    // A failed or cancelled transfer must not leave an item
+                    // that looks complete at the destination. Preserve only a
+                    // pre-existing destination that this transfer never owned.
+                    if !destinationExistedBeforeCopy || overwrite {
                         try? FileManager.default.removeItem(at: destinationURL)
                     }
                     throw error
