@@ -84,7 +84,7 @@ struct MaXplorerApp: App {
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(model.selectedItem?.isNetworkLocation ?? true)
 
-                Button("Move to Trash") {
+                Button(model.selectedItemsRequirePermanentDeletion ? "Delete Permanently" : "Move to Trash") {
                     model.requestTrashSelected()
                 }
                 .keyboardShortcut(.delete, modifiers: .command)

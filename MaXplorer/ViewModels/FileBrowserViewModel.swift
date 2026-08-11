@@ -202,6 +202,9 @@ final class FileBrowserViewModel: ObservableObject {
     var canPasteItems: Bool { currentURL.isFileURL && (!cutItemURLs.isEmpty || !copiedItemURLs.isEmpty || !SystemActions.fileURLsFromPasteboard().isEmpty) }
     var canPasteCutItems: Bool { currentURL.isFileURL && !cutItemURLs.isEmpty }
     var canTrashSelectedItems: Bool { selectedItems.contains { !$0.isNetworkLocation } }
+    var selectedItemsRequirePermanentDeletion: Bool {
+        selectedItems.contains(where: requiresPermanentDeletion)
+    }
     var canQuickViewSelectedItem: Bool {
         guard selectedItems.count == 1, let selectedItem else {
             return false
@@ -711,6 +714,10 @@ final class FileBrowserViewModel: ObservableObject {
     }
 
     func moveItemsToTrash(_ items: [FileItem]) async {
+        await deleteItems(items)
+    }
+
+    func deleteItems(_ items: [FileItem]) async {
         let trashableItems = items.filter { !$0.isNetworkLocation }
         guard !trashableItems.isEmpty else {
             return
@@ -718,7 +725,11 @@ final class FileBrowserViewModel: ObservableObject {
 
         do {
             for item in trashableItems {
-                try await fileSystem.moveToTrash(item.url)
+                if requiresPermanentDeletion(item) {
+                    try await fileSystem.deletePermanently(item.url)
+                } else {
+                    try await fileSystem.moveToTrash(item.url)
+                }
             }
 
             clearCutItems(containing: trashableItems.map(\.url))
@@ -726,6 +737,10 @@ final class FileBrowserViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func requiresPermanentDeletion(_ item: FileItem) -> Bool {
+        !item.isNetworkLocation && isOnRemoteMountedVolume(item.url)
     }
 
     func cutSelectedItem() {

@@ -20,6 +20,7 @@ protocol FileSystemService: Sendable {
     func renameItem(at url: URL, to newName: String) async throws -> URL
     func moveItems(_ resolvedItems: [(source: URL, shouldOverwrite: Bool)], to directory: URL) async throws -> [URL]
     func moveToTrash(_ url: URL) async throws
+    func deletePermanently(_ url: URL) async throws
     func quickViewContent(for url: URL, maximumBytes: Int) async throws -> QuickViewContent
 }
 
@@ -203,6 +204,12 @@ struct LocalFileSystemService: FileSystemService {
         try await Task.detached(priority: .userInitiated) {
             var resultingURL: NSURL?
             try FileManager.default.trashItem(at: url, resultingItemURL: &resultingURL)
+        }.value
+    }
+
+    func deletePermanently(_ url: URL) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try FileManager.default.removeItem(at: url)
         }.value
     }
 

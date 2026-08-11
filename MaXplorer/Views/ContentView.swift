@@ -183,20 +183,20 @@ private struct ActiveBrowserView: View {
             model.clearTrashRequest()
         }
         .confirmationDialog(
-            itemsPendingTrash.count == 1 ? "Move item to Trash?" : "Move items to Trash?",
+            deletionConfirmationTitle,
             isPresented: Binding(
                 get: { !itemsPendingTrash.isEmpty },
                 set: { if !$0 { itemsPendingTrash = [] } }
             )
         ) {
-            Button("Move to Trash", role: .destructive) {
+            Button(deletionConfirmationButtonTitle, role: .destructive) {
                 guard !itemsPendingTrash.isEmpty else {
                     return
                 }
 
                 let pendingItems = itemsPendingTrash
                 Task {
-                    await model.moveItemsToTrash(pendingItems)
+                    await model.deleteItems(pendingItems)
                     itemsPendingTrash = []
                 }
             }
@@ -205,13 +205,39 @@ private struct ActiveBrowserView: View {
                 itemsPendingTrash = []
             }
         } message: {
-            if itemsPendingTrash.count == 1, let itemPendingTrash = itemsPendingTrash.first {
+            if itemsPendingTrash.contains(where: model.requiresPermanentDeletion) {
+                Text(deletionConfirmationMessage)
+            } else if itemsPendingTrash.count == 1, let itemPendingTrash = itemsPendingTrash.first {
                 Text(itemPendingTrash.name)
             } else {
                 Text("\(itemsPendingTrash.count) selected items")
             }
         }
         .environmentObject(model)
+    }
+
+    private var deletionConfirmationTitle: String {
+        let permanentCount = itemsPendingTrash.filter(model.requiresPermanentDeletion).count
+        if permanentCount == itemsPendingTrash.count, permanentCount > 0 {
+            return permanentCount == 1 ? "Delete item permanently?" : "Delete items permanently?"
+        }
+        if permanentCount > 0 {
+            return "Delete selected items?"
+        }
+        return itemsPendingTrash.count == 1 ? "Move item to Trash?" : "Move items to Trash?"
+    }
+
+    private var deletionConfirmationButtonTitle: String {
+        itemsPendingTrash.contains(where: model.requiresPermanentDeletion) ? "Delete" : "Move to Trash"
+    }
+
+    private var deletionConfirmationMessage: String {
+        let permanentCount = itemsPendingTrash.filter(model.requiresPermanentDeletion).count
+        if permanentCount == itemsPendingTrash.count {
+            let name = itemsPendingTrash.first?.name ?? "The selected items"
+            return "\(name) will be permanently deleted because this network volume does not support Trash. This action cannot be undone."
+        }
+        return "Items on network volumes will be permanently deleted because those volumes do not support Trash. Other items will be moved to Trash."
     }
 
     private var browserNavigationView: some View {
@@ -1741,7 +1767,7 @@ private struct FileTableView: View {
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(!canEdit(selection: selection))
 
-                Button("Move to Trash", role: .destructive) {
+                Button(trashActionTitle(selection: selection), role: .destructive) {
                     startTrash(selection: selection)
                 }
                 .keyboardShortcut(.delete, modifiers: .command)
@@ -1892,6 +1918,11 @@ private struct FileTableView: View {
         selection.contains { id in
             model.items.first { $0.id == id }?.isNetworkLocation == false
         }
+    }
+
+    private func trashActionTitle(selection: Set<FileItem.ID>) -> String {
+        let items = model.items.filter { selection.contains($0.id) }
+        return items.contains(where: model.requiresPermanentDeletion) ? "Delete Permanently" : "Move to Trash"
     }
 
     private func canAnalyzeSpace(selection: Set<FileItem.ID>) -> Bool {
