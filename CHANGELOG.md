@@ -1,5 +1,16 @@
 # Change Log
 
+## 2026-08-11 — v1.07
+
+- Added a dedicated Copy Queue tab beside Space Analyzer, with transfer progress that continues correctly while switching tabs.
+- Added Copy Queue history for completed copy and move operations, configurable under File Transfers settings and limited to the latest 100 entries by default.
+- Added clickable destination-folder links to active transfers; selecting one switches to an existing folder tab or opens a new tab.
+- Improved transfer cancellation and failure handling: cancelled tasks disappear immediately, progress stops correctly, unexpected abort reasons are displayed, and partial destination files are removed.
+- Prioritized UI responsiveness during local and mounted-network copy and move operations by keeping filesystem work off the main thread and throttling progress updates.
+- Improved deletion on network volumes by permanently deleting files when the volume does not support Trash and presenting an accurate confirmation.
+- Grouped Space Analyzer and Copy Queue beneath Devices in the sidebar, while hiding the Devices section when no devices are available.
+- Improved the default window layout so the current-folder path and filter controls are fully visible at launch.
+
 ## 2026-08-03 — v1.06
 
 - Added an Appearance settings group with light, dark, and system modes; optional banded file rows; and Mac-style or Xplorer-style folder icons.
