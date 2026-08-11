@@ -41,7 +41,8 @@ private struct ActiveBrowserView: View {
             if model.isIntegratedTerminalPresented,
                model.currentURL.isFileURL,
                model.detailDestination == .files,
-               !tabs.isSpaceAnalyzerActive {
+               !tabs.isSpaceAnalyzerActive,
+               !tabs.isCopyQueueActive {
                 VSplitView {
                     browserNavigationView
                         .layoutPriority(1)
@@ -249,19 +250,21 @@ private struct ActiveBrowserView: View {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
-            switch model.detailDestination {
-            case .copyQueue:
+            if tabs.isCopyQueueActive {
                 CopyQueueView(queue: model.copyQueue)
-            case .about:
-                AboutView()
-            case .settings:
-                SettingsSurface()
-            case .files:
-                if tabs.isSpaceAnalyzerActive {
-                    SpaceAnalyzerView()
-                        .environmentObject(tabs.spaceAnalyzerViewModel)
-                        .environmentObject(tabs)
-                } else {
+            } else if tabs.isSpaceAnalyzerActive {
+                SpaceAnalyzerView()
+                    .environmentObject(tabs.spaceAnalyzerViewModel)
+                    .environmentObject(tabs)
+            } else {
+                switch model.detailDestination {
+                case .copyQueue:
+                    CopyQueueView(queue: model.copyQueue)
+                case .about:
+                    AboutView()
+                case .settings:
+                    SettingsSurface()
+                case .files:
                     VStack(spacing: 0) {
                         BrowserToolbar()
                         FileTableView(
@@ -379,6 +382,16 @@ private struct BrowserTabStrip: View {
                         )
                         .contextMenu {
                             Button("Close Space Analyzer") { tabs.closeSpaceAnalyzer() }
+                        }
+                    } else if tab.id == tabs.copyQueueTabID {
+                        CopyQueueTabButton(
+                            isSelected: tab.id == tabs.selectedTabID,
+                            width: tabWidth,
+                            onSelect: { tabs.selectTab(tab.id) },
+                            onClose: { tabs.closeCopyQueue() }
+                        )
+                        .contextMenu {
+                            Button("Close Copy Queue") { tabs.closeCopyQueue() }
                         }
                     } else {
                         BrowserTabButton(
@@ -722,6 +735,52 @@ private struct SpaceAnalyzerTabButton: View {
     }
 }
 
+private struct CopyQueueTabButton: View {
+    @Environment(\.appColorTheme) private var colorTheme
+    let isSelected: Bool
+    let width: CGFloat
+    let onSelect: () -> Void
+    let onClose: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Button(action: onSelect) {
+                HStack(spacing: 6) {
+                    if width >= 62 {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    Text("Copy Queue")
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            TabCloseButton(isEnabled: true, action: onClose)
+        }
+        .padding(.leading, max(7, min(11, width / 12)))
+        .padding(.trailing, 5)
+        .frame(width: width, height: 26, alignment: .leading)
+        .contentShape(RoundedRectangle(cornerRadius: 10))
+        .foregroundStyle(isSelected ? .primary : .secondary)
+        .background(
+            isSelected ? colorTheme.tintColor.opacity(0.18) :
+                (isHovering ? colorTheme.tintColor.opacity(0.09) : Color.clear),
+            in: RoundedRectangle(cornerRadius: 10)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isSelected ? colorTheme.tintColor.opacity(0.5) : Color.clear, lineWidth: 1)
+        }
+        .onHover { isHovering = $0 }
+    }
+}
+
 private struct SidebarView: View {
     @EnvironmentObject private var model: FileBrowserViewModel
     @EnvironmentObject private var tabs: BrowserTabsViewModel
@@ -737,6 +796,7 @@ private struct SidebarView: View {
             List(selection: Binding<String?>(
             get: {
                 if tabs.isSpaceAnalyzerActive { return spaceAnalyzerSelectionID }
+                if tabs.isCopyQueueActive { return copyQueueSelectionID }
                 switch model.detailDestination {
                 case .copyQueue: return copyQueueSelectionID
                 case .settings, .about: return nil
@@ -1142,6 +1202,7 @@ private struct BrowserToolbar: View {
 
 private struct CopyQueueView: View {
     @ObservedObject var queue: CopyQueueViewModel
+    @EnvironmentObject private var tabs: BrowserTabsViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1170,9 +1231,13 @@ private struct CopyQueueView: View {
                     if !queue.items.isEmpty {
                         Section("Tasks") {
                             ForEach(queue.items) { item in
-                                CopyQueueRow(item: item) {
-                                    queue.cancel(item.id)
-                                }
+                                CopyQueueRow(
+                                    item: item,
+                                    onOpenDestination: {
+                                        tabs.openOrSelectLocation(item.destinationURL.deletingLastPathComponent())
+                                    },
+                                    onCancel: { queue.cancel(item.id) }
+                                )
                                 .listRowInsets(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14))
                             }
                         }
@@ -1229,12 +1294,13 @@ private struct CopyQueueHistoryRow: View {
 
 private struct CopyQueueRow: View {
     let item: CopyQueueItem
+    let onOpenDestination: () -> Void
     let onCancel: () -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Text(item.name)
                         .font(.system(size: 13, weight: .medium))
                         .lineLimit(1)
@@ -1243,6 +1309,17 @@ private struct CopyQueueRow: View {
                     Text(stateText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    Button(action: onOpenDestination) {
+                        Text(destinationFolderURL.path)
+                            .font(.caption)
+                            .underline()
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.link)
+                    .help(destinationFolderURL.path)
                 }
 
                 ProgressView(value: item.progress)
@@ -1284,6 +1361,10 @@ private struct CopyQueueRow: View {
         case .cancelled:
             return "Cancelled"
         }
+    }
+
+    private var destinationFolderURL: URL {
+        item.destinationURL.deletingLastPathComponent()
     }
 
     private var speedText: String {

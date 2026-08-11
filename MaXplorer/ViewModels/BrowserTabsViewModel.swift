@@ -110,12 +110,41 @@ final class BrowserTabsViewModel: ObservableObject {
         selectedTabID = tab.id
     }
 
-    func showCopyQueue() {
-        guard selectBrowserTabForSidebarAction() else {
+    func openOrSelectLocation(_ url: URL) {
+        let location = url.standardizedFileURL
+        if let existingTab = tabs.first(where: {
+            $0.id != spaceAnalyzerTabID &&
+            $0.id != copyQueueTabID &&
+            $0.model.currentURL.standardizedFileURL == location
+        }) {
+            selectedTabID = existingTab.id
+            existingTab.model.showCurrentFolder()
             return
         }
 
-        activeModel.showCopyQueue()
+        if canAddTab {
+            openLocationInNewTab(location)
+        } else if let browserTab = tabs.first(where: {
+            $0.id != spaceAnalyzerTabID && $0.id != copyQueueTabID
+        }) {
+            selectedTabID = browserTab.id
+            browserTab.model.navigate(to: location)
+        }
+    }
+
+    func showCopyQueue() {
+        if let existingID = copyQueueTabID {
+            selectedTabID = existingID
+            return
+        }
+
+        guard canAddTab else { return }
+
+        let tab = makeTab()
+        let insertionIndex = spaceAnalyzerTabID == nil ? 0 : 1
+        tabs.insert(tab, at: insertionIndex)
+        copyQueueTabID = tab.id
+        selectedTabID = tab.id
     }
 
     func showSettings() {
@@ -153,11 +182,14 @@ final class BrowserTabsViewModel: ObservableObject {
         }
 
         selectedTabID = tabID
-        activeModel.showCurrentFolder()
+        if tabID != spaceAnalyzerTabID, tabID != copyQueueTabID {
+            activeModel.showCurrentFolder()
+        }
     }
 
     func canPasteItems(to tabID: BrowserTab.ID) -> Bool {
         guard tabID != spaceAnalyzerTabID,
+              tabID != copyQueueTabID,
               let tab = tabs.first(where: { $0.id == tabID }) else {
             return false
         }
@@ -192,6 +224,10 @@ final class BrowserTabsViewModel: ObservableObject {
     /// tab strip's drag-to-reorder).
     func moveTab(_ tabID: BrowserTab.ID, before targetID: BrowserTab.ID) {
         guard tabID != targetID,
+              tabID != spaceAnalyzerTabID,
+              tabID != copyQueueTabID,
+              targetID != spaceAnalyzerTabID,
+              targetID != copyQueueTabID,
               let fromIndex = tabs.firstIndex(where: { $0.id == tabID }),
               let targetIndex = tabs.firstIndex(where: { $0.id == targetID }) else {
             return
@@ -203,7 +239,10 @@ final class BrowserTabsViewModel: ObservableObject {
     }
 
     func duplicateTab(_ tabID: BrowserTab.ID) {
-        guard canAddTab, let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
+        guard canAddTab,
+              tabID != spaceAnalyzerTabID,
+              tabID != copyQueueTabID,
+              let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
         let source = tabs[index]
         let tab = makeTab()
         tab.model.setListingOptions(listingOptions)
@@ -215,9 +254,12 @@ final class BrowserTabsViewModel: ObservableObject {
     }
 
     func sortTabsByName() {
-        tabs.sort { lhs, rhs in
+        let specialIDs = [spaceAnalyzerTabID, copyQueueTabID].compactMap { $0 }
+        let specialTabs = specialIDs.compactMap { id in tabs.first { $0.id == id } }
+        let browserTabs = tabs.filter { !specialIDs.contains($0.id) }.sorted { lhs, rhs in
             lhs.model.tabTitle.localizedStandardCompare(rhs.model.tabTitle) == .orderedAscending
         }
+        tabs = specialTabs + browserTabs
     }
 
     /// Keeps the first tab pointing at each location and closes the rest.
@@ -226,6 +268,11 @@ final class BrowserTabsViewModel: ObservableObject {
         var survivors: [BrowserTab] = []
 
         for tab in tabs {
+            if tab.id == spaceAnalyzerTabID || tab.id == copyQueueTabID {
+                survivors.append(tab)
+                continue
+            }
+
             let key = tab.model.currentURL.standardizedFileURL.absoluteString
             if seenLocations.insert(key).inserted {
                 survivors.append(tab)
@@ -257,8 +304,8 @@ final class BrowserTabsViewModel: ObservableObject {
         }
         let tab = makeTab()
         tabs.insert(tab, at: 0)
-        selectedTabID = tab.id
         spaceAnalyzerTabID = tab.id
+        selectedTabID = tab.id
         if let url { spaceAnalyzerViewModel.startScan(url: url) }
     }
 
@@ -266,6 +313,18 @@ final class BrowserTabsViewModel: ObservableObject {
         guard let id = spaceAnalyzerTabID else { return }
         spaceAnalyzerTabID = nil
         spaceAnalyzerViewModel.cancelScan()
+        closeTab(id)
+    }
+
+    // MARK: – Copy Queue
+
+    @Published private(set) var copyQueueTabID: UUID?
+
+    var isCopyQueueActive: Bool { selectedTabID == copyQueueTabID }
+
+    func closeCopyQueue() {
+        guard let id = copyQueueTabID else { return }
+        copyQueueTabID = nil
         closeTab(id)
     }
 
@@ -310,7 +369,7 @@ final class BrowserTabsViewModel: ObservableObject {
     }
 
     private func selectBrowserTabForSidebarAction() -> Bool {
-        guard isSpaceAnalyzerActive else {
+        guard isSpaceAnalyzerActive || isCopyQueueActive else {
             return true
         }
 
@@ -323,11 +382,13 @@ final class BrowserTabsViewModel: ObservableObject {
     }
 
     private func selectExistingBrowserTabForSidebarSurface() -> Bool {
-        guard isSpaceAnalyzerActive else {
+        guard isSpaceAnalyzerActive || isCopyQueueActive else {
             return true
         }
 
-        guard let browserTab = tabs.first(where: { $0.id != spaceAnalyzerTabID }) else {
+        guard let browserTab = tabs.first(where: {
+            $0.id != spaceAnalyzerTabID && $0.id != copyQueueTabID
+        }) else {
             return false
         }
 

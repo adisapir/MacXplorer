@@ -249,7 +249,7 @@ final class CopyQueueViewModel: ObservableObject {
             return
         }
 
-        items[index].state = .cancelled
+        items.remove(at: index)
         aggregateFinishedItemCount += 1
         startAvailableCopies()
     }
