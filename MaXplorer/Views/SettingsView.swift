@@ -52,6 +52,19 @@ struct SettingsView: View {
                 )
             }
 
+            Section("Space Analyzer") {
+                Picker("Default Mode", selection: $settings.defaultSpaceAnalyzerMode) {
+                    ForEach(SpaceAnalyzerMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+
+                Text("All Files Mode shows the complete scanned hierarchy. Drill-Down Mode shows only the current folder's contents and lets you open folders to explore the largest areas.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("File Transfers") {
                 settingSlider(
                     title: "Maximum number of concurrent copied files",

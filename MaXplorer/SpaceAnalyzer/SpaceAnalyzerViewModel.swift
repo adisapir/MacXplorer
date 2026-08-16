@@ -1,6 +1,20 @@
 import Combine
 import Foundation
 
+enum SpaceAnalyzerMode: String, CaseIterable, Identifiable {
+    case allFiles
+    case drillDown
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .allFiles: "All Files Mode"
+        case .drillDown: "Drill-Down Mode"
+        }
+    }
+}
+
 @MainActor
 final class SpaceAnalyzerViewModel: ObservableObject {
     enum ScanState {
@@ -62,11 +76,14 @@ final class SpaceAnalyzerViewModel: ObservableObject {
                 }
                 if !Task.isCancelled {
                     scanState = .ready(root: root)
+                    scanTask = nil
                 }
             } catch is CancellationError {
                 scanState = .idle
+                scanTask = nil
             } catch {
                 scanState = .failed(error.localizedDescription)
+                scanTask = nil
             }
         }
     }

@@ -120,6 +120,9 @@ struct SpaceAnalyzerIcon: View {
 struct SpaceAnalyzerView: View {
     @EnvironmentObject private var viewModel: SpaceAnalyzerViewModel
     @EnvironmentObject private var tabs: BrowserTabsViewModel
+    @EnvironmentObject private var settings: AppSettings
+    @State private var mode: SpaceAnalyzerMode = .allFiles
+    @State private var drillPath: [SpaceNode] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -130,6 +133,8 @@ struct SpaceAnalyzerView: View {
             statsBar
         }
         .background(ThemedSurfaceBackground())
+        .onAppear { mode = settings.defaultSpaceAnalyzerMode }
+        .onChange(of: mode) { _, _ in drillPath.removeAll() }
     }
 
     // MARK: Toolbar
@@ -142,6 +147,15 @@ struct SpaceAnalyzerView: View {
                 .textFieldStyle(.plain)
                 .disabled(viewModel.isScanning)
                 .onSubmit { viewModel.refresh() }
+
+            Picker("Mode", selection: $mode) {
+                ForEach(SpaceAnalyzerMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(width: 260)
 
             if viewModel.isScanning {
                 Button("Cancel Scan") { viewModel.cancelScan() }
@@ -199,8 +213,52 @@ struct SpaceAnalyzerView: View {
     }
 
     private func treemapView(root: SpaceNode) -> some View {
-        TreemapCanvas(root: root, categories: viewModel.categories, tabs: tabs)
+        VStack(spacing: 0) {
+            if mode == .drillDown {
+                drillDownNavigation(root: root)
+                Divider()
+            }
+            TreemapCanvas(
+                root: drillPath.last ?? root,
+                mode: mode,
+                categories: viewModel.categories,
+                tabs: tabs,
+                onOpenDirectory: { node in drillPath.append(node) }
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onChange(of: root.id) { _, _ in drillPath.removeAll() }
+    }
+
+    private func drillDownNavigation(root: SpaceNode) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                _ = drillPath.popLast()
+            } label: {
+                Image(systemName: "chevron.left")
+            }
+            .buttonStyle(.borderless)
+            .disabled(drillPath.isEmpty)
+            .help("Go to Parent Folder")
+
+            Button(root.name.isEmpty ? root.url.path : root.name) {
+                drillPath.removeAll()
+            }
+            .buttonStyle(.plain)
+
+            ForEach(Array(drillPath.enumerated()), id: \.element.id) { index, node in
+                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                Button(node.name) {
+                    drillPath = Array(drillPath.prefix(index + 1))
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .font(.callout)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 7)
+        .background(ThemedBarBackground())
     }
 
     // MARK: Stats bar
@@ -237,8 +295,10 @@ struct SpaceAnalyzerView: View {
 
 private struct TreemapCanvas: View {
     let root: SpaceNode
+    let mode: SpaceAnalyzerMode
     let categories: FileCategoryService
     let tabs: BrowserTabsViewModel
+    let onOpenDirectory: (SpaceNode) -> Void
 
     @State private var tileList: [(node: SpaceNode, frame: CGRect)] = []
     @State private var canvasSize: CGSize = .zero
@@ -250,7 +310,14 @@ private struct TreemapCanvas: View {
             ZStack(alignment: .topLeading) {
                 ThemedSurfaceBackground()
                 ForEach(tileList, id: \.node.id) { item in
-                    TileView(node: item.node, size: item.frame.size, categories: categories, tabs: tabs)
+                    TileView(
+                        node: item.node,
+                        size: item.frame.size,
+                        mode: mode,
+                        categories: categories,
+                        tabs: tabs,
+                        onOpenDirectory: onOpenDirectory
+                    )
                         .frame(width: item.frame.width, height: item.frame.height)
                         // .position is layout-affecting (unlike .offset), so the tile's
                         // hit region — including its context menu — lands where it renders.
@@ -262,13 +329,18 @@ private struct TreemapCanvas: View {
             .onAppear { rebuildLayout(size: geo.size) }
         }
         .onChange(of: root.id) { _, _ in rebuildLayout(size: canvasSize) }
+        .onChange(of: mode) { _, _ in rebuildLayout(size: canvasSize) }
     }
 
     private func rebuildLayout(size: CGSize) {
         canvasSize = size
         guard size.width > 0, size.height > 0 else { return }
         TreemapLayout.layout(node: root, in: CGRect(origin: .zero, size: size))
-        tileList = collectLeaves(node: root)
+        tileList = mode == .drillDown
+            ? root.children.compactMap { child in
+                child.layoutFrame.width * child.layoutFrame.height >= minTileArea ? (child, child.layoutFrame) : nil
+            }
+            : collectLeaves(node: root)
     }
 
     private func collectLeaves(node: SpaceNode) -> [(SpaceNode, CGRect)] {
@@ -288,16 +360,26 @@ private struct TreemapCanvas: View {
 private struct TileView: View {
     let node: SpaceNode
     let size: CGSize
+    let mode: SpaceAnalyzerMode
     let categories: FileCategoryService
     let tabs: BrowserTabsViewModel
+    let onOpenDirectory: (SpaceNode) -> Void
 
     var body: some View {
-        let color = node.isDirectory ? categories.directoryColor : categories.color(for: node.url)
+        let color = node.isDirectory && mode == .drillDown ? folderColor : (node.isDirectory ? categories.directoryColor : categories.color(for: node.url))
         let showLabel = size.width > 40 && size.height > 22
+        let shape = FolderTileShape()
 
         ZStack(alignment: .bottom) {
             color
-                .border(Color(nsColor: .windowBackgroundColor).opacity(0.6), width: 0.5)
+                .clipShape(node.isDirectory && mode == .drillDown ? AnyShape(shape) : AnyShape(Rectangle()))
+                .overlay {
+                    if node.isDirectory && mode == .drillDown {
+                        shape.stroke(Color(nsColor: .windowBackgroundColor).opacity(0.7), lineWidth: 0.7)
+                    } else {
+                        Rectangle().stroke(Color(nsColor: .windowBackgroundColor).opacity(0.6), lineWidth: 0.5)
+                    }
+                }
 
             if showLabel {
                 Text(node.name)
@@ -313,6 +395,11 @@ private struct TileView: View {
         }
         .frame(width: size.width, height: size.height)
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            if mode == .drillDown && node.isDirectory {
+                onOpenDirectory(node)
+            }
+        }
         .contextMenu {
             Button("Open") {
                 NSWorkspace.shared.open(node.url)
@@ -326,6 +413,46 @@ private struct TileView: View {
                 NSPasteboard.general.setString(node.url.path(percentEncoded: false), forType: .string)
             }
         }
-        .tileTooltip("\(ByteCountFormatter.string(fromByteCount: Int64(node.size), countStyle: .file))\n\(node.name)\n\(node.url.path(percentEncoded: false))")
+        .tileTooltip(tooltip)
+    }
+
+    private var folderColor: Color {
+        let palette: [Color] = [.blue, .green, .orange, .purple, .red, .yellow, .mint, .indigo]
+        let hash = node.url.standardizedFileURL.path.utf8.reduce(UInt64(1_469_598_103_934_665_603)) {
+            ($0 ^ UInt64($1)) &* 1_099_511_628_211
+        }
+        return palette[Int(hash % UInt64(palette.count))].opacity(0.78)
+    }
+
+    private var tooltip: String {
+        let sizeText = ByteCountFormatter.string(fromByteCount: Int64(node.size), countStyle: .file)
+        if node.isDirectory && mode == .drillDown {
+            return "\(sizeText)\n\(node.descendantCount) objects\n\(node.name)\n\(node.url.path(percentEncoded: false))"
+        }
+        return "\(sizeText)\n\(node.name)\n\(node.url.path(percentEncoded: false))"
+    }
+}
+
+private struct FolderTileShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let tabWidth = min(rect.width * 0.42, 56)
+        let tabHeight = min(max(3, rect.height * 0.13), 12)
+        let radius = min(5, min(rect.width, rect.height) * 0.08)
+        var path = Path()
+        path.move(to: CGPoint(x: radius, y: tabHeight))
+        path.addLine(to: CGPoint(x: 0, y: tabHeight))
+        path.addLine(to: CGPoint(x: 0, y: radius))
+        path.addQuadCurve(to: CGPoint(x: radius, y: 0), control: .zero)
+        path.addLine(to: CGPoint(x: max(radius, tabWidth - radius), y: 0))
+        path.addQuadCurve(to: CGPoint(x: tabWidth, y: radius), control: CGPoint(x: tabWidth, y: 0))
+        path.addLine(to: CGPoint(x: tabWidth + tabHeight * 0.5, y: tabHeight))
+        path.addLine(to: CGPoint(x: rect.width - radius, y: tabHeight))
+        path.addQuadCurve(to: CGPoint(x: rect.width, y: tabHeight + radius), control: CGPoint(x: rect.width, y: tabHeight))
+        path.addLine(to: CGPoint(x: rect.width, y: rect.height - radius))
+        path.addQuadCurve(to: CGPoint(x: rect.width - radius, y: rect.height), control: CGPoint(x: rect.width, y: rect.height))
+        path.addLine(to: CGPoint(x: radius, y: rect.height))
+        path.addQuadCurve(to: CGPoint(x: 0, y: rect.height - radius), control: CGPoint(x: 0, y: rect.height))
+        path.closeSubpath()
+        return path
     }
 }

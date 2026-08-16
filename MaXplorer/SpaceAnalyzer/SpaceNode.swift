@@ -10,6 +10,10 @@ final class SpaceNode: Identifiable, @unchecked Sendable {
     let isDirectory: Bool
     var layoutFrame: CGRect = .zero
 
+    var descendantCount: Int {
+        children.reduce(0) { $0 + 1 + $1.descendantCount }
+    }
+
     init(url: URL, name: String, size: UInt64, isDirectory: Bool, children: [SpaceNode] = []) {
         self.url = url
         self.name = name

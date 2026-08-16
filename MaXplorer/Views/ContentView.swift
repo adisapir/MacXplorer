@@ -373,7 +373,7 @@ private struct BrowserTabStrip: View {
                     if tab.id == tabs.spaceAnalyzerTabID {
                         SpaceAnalyzerTabButton(
                             isSelected: tab.id == tabs.selectedTabID,
-                            isScanning: tabs.spaceAnalyzerViewModel.isScanning,
+                            viewModel: tabs.spaceAnalyzerViewModel,
                             width: tabWidth,
                             tabID: tab.id,
                             onSelect: { tabs.selectTab(tab.id) },
@@ -671,7 +671,7 @@ private struct TabCloseButton: View {
 private struct SpaceAnalyzerTabButton: View {
     @Environment(\.appColorTheme) private var colorTheme
     let isSelected: Bool
-    let isScanning: Bool
+    @ObservedObject var viewModel: SpaceAnalyzerViewModel
     let width: CGFloat
     let tabID: UUID
     let onSelect: () -> Void
@@ -680,6 +680,7 @@ private struct SpaceAnalyzerTabButton: View {
 
     @State private var isHovering = false
     private let cornerRadius: CGFloat = 10
+    private var isScanning: Bool { viewModel.isScanning }
     var body: some View {
         HStack(spacing: 2) {
             Button(action: onSelect) {

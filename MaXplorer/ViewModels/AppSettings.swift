@@ -16,6 +16,7 @@ final class AppSettings: ObservableObject {
     private static let bandedFileRowsKey = "BandedFileRows"
     private static let folderIconStyleKey = "FolderIconStyle"
     private static let colorThemeKey = "AppColorTheme"
+    private static let defaultSpaceAnalyzerModeKey = "DefaultSpaceAnalyzerMode"
     static let maximumConcurrentTabsRange = 5...50
     static let manualFolderHistoryLimitRange = 0...20
     static let maximumConcurrentCopiedFilesRange = 1...5
@@ -95,6 +96,12 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var defaultSpaceAnalyzerMode: SpaceAnalyzerMode {
+        didSet {
+            UserDefaults.standard.set(defaultSpaceAnalyzerMode.rawValue, forKey: Self.defaultSpaceAnalyzerModeKey)
+        }
+    }
+
     @Published var visibleColumns: Set<FileColumn> {
         didSet {
             // "Name" can never be turned off, so at least one column always remains.
@@ -136,6 +143,8 @@ final class AppSettings: ObservableObject {
             .flatMap(FolderIconStyle.init(rawValue:)) ?? .mac
         self.colorTheme = defaults.string(forKey: Self.colorThemeKey)
             .flatMap(AppColorTheme.init(rawValue:)) ?? .default
+        self.defaultSpaceAnalyzerMode = defaults.string(forKey: Self.defaultSpaceAnalyzerModeKey)
+            .flatMap(SpaceAnalyzerMode.init(rawValue:)) ?? .allFiles
 
         if let savedColumns = defaults.stringArray(forKey: Self.visibleColumnsKey) {
             var columns = Set(savedColumns.compactMap(FileColumn.init(rawValue:)))
