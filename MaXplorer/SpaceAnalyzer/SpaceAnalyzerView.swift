@@ -9,10 +9,28 @@ enum TreemapLayout {
         node.layoutFrame = rect
         guard node.isDirectory, !node.children.isEmpty, node.size > 0,
               rect.width > 2, rect.height > 2 else { return }
-        squarify(nodes: node.children, total: node.size, in: rect.insetBy(dx: 1, dy: 1))
+        squarify(
+            nodes: node.children,
+            total: Double(node.size),
+            in: rect.insetBy(dx: 1, dy: 1),
+            weight: { Double($0.size) }
+        )
     }
 
-    private static func squarify(nodes: [SpaceNode], total: UInt64, in available: CGRect) {
+    /// Lays out one folder level as a WinDirStat-style mosaic. Square-root
+    /// weighting keeps relative size ordering while leaving small items usable.
+    static func layoutDrillDown(nodes: [SpaceNode], in rect: CGRect) {
+        let weight: (SpaceNode) -> Double = { sqrt(Double(max(1, $0.size))) }
+        let total = nodes.reduce(0.0) { $0 + weight($1) }
+        squarify(nodes: nodes, total: total, in: rect.insetBy(dx: 4, dy: 4), weight: weight)
+    }
+
+    private static func squarify(
+        nodes: [SpaceNode],
+        total: Double,
+        in available: CGRect,
+        weight: (SpaceNode) -> Double
+    ) {
         guard !nodes.isEmpty, total > 0, available.width > 0, available.height > 0 else { return }
         var remaining = nodes
         var current = available
@@ -20,28 +38,39 @@ enum TreemapLayout {
 
         while !remaining.isEmpty && remainingTotal > 0 && current.width > 0 && current.height > 0 {
             var row: [SpaceNode] = []
-            var rowTotal: UInt64 = 0
+            var rowTotal = 0.0
             var prevWorst = Double.infinity
 
             for (i, node) in remaining.enumerated() {
                 row.append(node)
-                rowTotal += node.size
-                let worst = worstRatio(row: row, rowTotal: rowTotal, total: remainingTotal, in: current)
+                rowTotal += weight(node)
+                let worst = worstRatio(
+                    row: row,
+                    rowTotal: rowTotal,
+                    total: remainingTotal,
+                    in: current,
+                    weight: weight
+                )
                 if i > 0 && worst > prevWorst {
                     row.removeLast()
-                    rowTotal -= node.size
+                    rowTotal -= weight(node)
                     break
                 }
                 prevWorst = worst
             }
 
             let count = row.count
-            placeRow(row: row, rowTotal: rowTotal, remaining: remainingTotal, in: current)
+            placeRow(row: row, rowTotal: rowTotal, remaining: remainingTotal, in: current, weight: weight)
             for n in row where n.isDirectory && !n.children.isEmpty {
-                squarify(nodes: n.children, total: n.size, in: n.layoutFrame.insetBy(dx: 1, dy: 1))
+                squarify(
+                    nodes: n.children,
+                    total: Double(n.size),
+                    in: n.layoutFrame.insetBy(dx: 1, dy: 1),
+                    weight: { Double($0.size) }
+                )
             }
 
-            let frac = CGFloat(rowTotal) / CGFloat(remainingTotal)
+            let frac = CGFloat(rowTotal / remainingTotal)
             if current.width >= current.height {
                 let w = current.width * frac
                 current = CGRect(x: current.minX + w, y: current.minY, width: current.width - w, height: current.height)
@@ -54,14 +83,20 @@ enum TreemapLayout {
         }
     }
 
-    private static func worstRatio(row: [SpaceNode], rowTotal: UInt64, total: UInt64, in rect: CGRect) -> Double {
+    private static func worstRatio(
+        row: [SpaceNode],
+        rowTotal: Double,
+        total: Double,
+        in rect: CGRect,
+        weight: (SpaceNode) -> Double
+    ) -> Double {
         let isWide = rect.width >= rect.height
-        let frac = Double(rowTotal) / Double(total)
+        let frac = rowTotal / total
         let stripLong = (isWide ? Double(rect.width) : Double(rect.height)) * frac
         let stripShort = isWide ? Double(rect.height) : Double(rect.width)
         var worst = 0.0
         for n in row {
-            let tileFrac = Double(n.size) / Double(rowTotal)
+            let tileFrac = weight(n) / rowTotal
             let a = stripLong
             let b = stripShort * tileFrac
             guard a > 0, b > 0 else { continue }
@@ -70,14 +105,20 @@ enum TreemapLayout {
         return worst
     }
 
-    private static func placeRow(row: [SpaceNode], rowTotal: UInt64, remaining: UInt64, in rect: CGRect) {
+    private static func placeRow(
+        row: [SpaceNode],
+        rowTotal: Double,
+        remaining: Double,
+        in rect: CGRect,
+        weight: (SpaceNode) -> Double
+    ) {
         let isWide = rect.width >= rect.height
-        let frac = CGFloat(rowTotal) / CGFloat(remaining)
+        let frac = CGFloat(rowTotal / remaining)
         if isWide {
             let stripWidth = rect.width * frac
             var y = rect.minY
             for n in row {
-                let h = rect.height * CGFloat(n.size) / CGFloat(rowTotal)
+                let h = rect.height * CGFloat(weight(n) / rowTotal)
                 n.layoutFrame = CGRect(x: rect.minX, y: y, width: stripWidth, height: h)
                 y += h
             }
@@ -85,7 +126,7 @@ enum TreemapLayout {
             let stripHeight = rect.height * frac
             var x = rect.minX
             for n in row {
-                let w = rect.width * CGFloat(n.size) / CGFloat(rowTotal)
+                let w = rect.width * CGFloat(weight(n) / rowTotal)
                 n.layoutFrame = CGRect(x: x, y: rect.minY, width: w, height: stripHeight)
                 x += w
             }
@@ -318,10 +359,10 @@ private struct TreemapCanvas: View {
                         tabs: tabs,
                         onOpenDirectory: onOpenDirectory
                     )
-                        .frame(width: item.frame.width, height: item.frame.height)
-                        // .position is layout-affecting (unlike .offset), so the tile's
-                        // hit region — including its context menu — lands where it renders.
-                        .position(x: item.frame.midX, y: item.frame.midY)
+                    .frame(width: item.frame.width, height: item.frame.height)
+                    // .position is layout-affecting (unlike .offset), so the tile's
+                    // hit region — including its context menu — lands where it renders.
+                    .position(x: item.frame.midX, y: item.frame.midY)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -335,12 +376,14 @@ private struct TreemapCanvas: View {
     private func rebuildLayout(size: CGSize) {
         canvasSize = size
         guard size.width > 0, size.height > 0 else { return }
-        TreemapLayout.layout(node: root, in: CGRect(origin: .zero, size: size))
-        tileList = mode == .drillDown
-            ? root.children.compactMap { child in
-                child.layoutFrame.width * child.layoutFrame.height >= minTileArea ? (child, child.layoutFrame) : nil
-            }
-            : collectLeaves(node: root)
+        let bounds = CGRect(origin: .zero, size: size)
+        if mode == .drillDown {
+            TreemapLayout.layoutDrillDown(nodes: root.children, in: bounds)
+            tileList = root.children.map { ($0, $0.layoutFrame) }
+        } else {
+            TreemapLayout.layout(node: root, in: bounds)
+            tileList = collectLeaves(node: root)
+        }
     }
 
     private func collectLeaves(node: SpaceNode) -> [(SpaceNode, CGRect)] {
@@ -366,7 +409,7 @@ private struct TileView: View {
     let onOpenDirectory: (SpaceNode) -> Void
 
     var body: some View {
-        let color = node.isDirectory && mode == .drillDown ? folderColor : (node.isDirectory ? categories.directoryColor : categories.color(for: node.url))
+        let color = node.isDirectory ? categories.directoryColor : categories.color(for: node.url)
         let showLabel = size.width > 40 && size.height > 22
         let shape = FolderTileShape()
 
@@ -414,14 +457,6 @@ private struct TileView: View {
             }
         }
         .tileTooltip(tooltip)
-    }
-
-    private var folderColor: Color {
-        let palette: [Color] = [.blue, .green, .orange, .purple, .red, .yellow, .mint, .indigo]
-        let hash = node.url.standardizedFileURL.path.utf8.reduce(UInt64(1_469_598_103_934_665_603)) {
-            ($0 ^ UInt64($1)) &* 1_099_511_628_211
-        }
-        return palette[Int(hash % UInt64(palette.count))].opacity(0.78)
     }
 
     private var tooltip: String {
