@@ -307,15 +307,13 @@ struct SpaceAnalyzerView: View {
     private var statsBar: some View {
         HStack(spacing: 20) {
             if let stats = viewModel.volumeStats {
+                let freePercent = Int((Double(stats.free) / Double(stats.total) * 100).rounded())
                 Label(
-                    "Total: \(ByteCountFormatter.string(fromByteCount: Int64(stats.total), countStyle: .file))",
+                    "Used: \(ByteCountFormatter.string(fromByteCount: Int64(stats.used), countStyle: .file))",
                     systemImage: "internaldrive"
                 )
-                Label(
-                    "Free: \(ByteCountFormatter.string(fromByteCount: Int64(stats.free), countStyle: .file))",
-                    systemImage: "circle.dotted"
-                )
-                .foregroundStyle(stats.free < stats.total / 10 ? .red : .secondary)
+                Text("Free: \(ByteCountFormatter.string(fromByteCount: Int64(stats.free), countStyle: .file)) (\(freePercent)%)")
+                    .foregroundStyle(freePercent < 10 ? .red : .secondary)
             } else {
                 Text("Volume information unavailable").foregroundStyle(.secondary)
             }

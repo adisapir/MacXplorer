@@ -53,12 +53,8 @@ final class SpaceAnalyzerViewModel: ObservableObject {
         scanState = .idle
     }
 
-    var volumeStats: (total: UInt64, free: UInt64)? {
-        let url = URL(fileURLWithPath: rootPath)
-        let values = try? url.resourceValues(forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey])
-        guard let total = values?.volumeTotalCapacity,
-              let free = values?.volumeAvailableCapacityForImportantUsage else { return nil }
-        return (UInt64(max(0, total)), UInt64(max(0, free)))
+    var volumeStats: VolumeCapacityStats? {
+        VolumeCapacityReader.stats(for: URL(fileURLWithPath: rootPath))
     }
 
     private func beginScan() {

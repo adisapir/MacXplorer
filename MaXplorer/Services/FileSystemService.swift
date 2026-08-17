@@ -1,6 +1,43 @@
 import Foundation
 import ImageIO
 
+struct VolumeCapacityStats: Equatable, Sendable {
+    let used: UInt64
+    let free: UInt64
+    let total: UInt64
+}
+
+/// Reads capacity consistently for local and network-backed file URLs.
+/// Network file systems do not always populate the "important usage" key, so
+/// prefer the general available-capacity value and retain filesystem attributes
+/// as a fallback.
+nonisolated enum VolumeCapacityReader {
+    static func stats(for url: URL) -> VolumeCapacityStats? {
+        guard url.isFileURL else { return nil }
+
+        let values = try? url.resourceValues(forKeys: [
+            .volumeTotalCapacityKey,
+            .volumeAvailableCapacityKey,
+            .volumeAvailableCapacityForImportantUsageKey
+        ])
+        let fileSystemAttributes = try? FileManager.default.attributesOfFileSystem(forPath: url.path)
+        let total = values?.volumeTotalCapacity
+            ?? (fileSystemAttributes?[.systemSize] as? NSNumber)?.intValue
+        let free = values?.volumeAvailableCapacity
+            ?? values?.volumeAvailableCapacityForImportantUsage.map(Int.init)
+            ?? (fileSystemAttributes?[.systemFreeSize] as? NSNumber)?.intValue
+
+        guard let total, total > 0, let free, free >= 0 else { return nil }
+        let totalBytes = UInt64(total)
+        let freeBytes = min(UInt64(free), totalBytes)
+        return VolumeCapacityStats(
+            used: totalBytes - freeBytes,
+            free: freeBytes,
+            total: totalBytes
+        )
+    }
+}
+
 /// Controls whether the (potentially slow) per-file metadata is fetched during
 /// a listing. Owner resolution and image capture-date reads are only worth
 /// paying for when their columns are visible, so they default to off.

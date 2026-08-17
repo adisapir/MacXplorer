@@ -223,23 +223,8 @@ final class FileBrowserViewModel: ObservableObject {
 
     /// Used/free/total bytes for the volume backing the current folder.
     /// Nil while browsing the network root or when the volume can't be queried.
-    var volumeStats: (used: UInt64, free: UInt64, total: UInt64)? {
-        guard currentURL.isFileURL else { return nil }
-        let values = try? currentURL.resourceValues(forKeys: [
-            .volumeTotalCapacityKey,
-            .volumeAvailableCapacityKey,
-            .volumeAvailableCapacityForImportantUsageKey
-        ])
-        let fileSystemAttributes = try? FileManager.default.attributesOfFileSystem(forPath: currentURL.path)
-        let total = values?.volumeTotalCapacity
-            ?? (fileSystemAttributes?[.systemSize] as? NSNumber)?.intValue
-        let free = values?.volumeAvailableCapacity
-            ?? values?.volumeAvailableCapacityForImportantUsage.map(Int.init)
-            ?? (fileSystemAttributes?[.systemFreeSize] as? NSNumber)?.intValue
-        guard let total, total > 0, let free, free >= 0 else { return nil }
-        let totalBytes = UInt64(max(0, total))
-        let freeBytes = min(UInt64(max(0, free)), totalBytes)
-        return (totalBytes - freeBytes, freeBytes, totalBytes)
+    var volumeStats: VolumeCapacityStats? {
+        VolumeCapacityReader.stats(for: currentURL)
     }
     var tabTitle: String {
         if currentURL == Self.networkRootURL {
