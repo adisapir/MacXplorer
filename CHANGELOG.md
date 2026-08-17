@@ -1,5 +1,13 @@
 # Change Log
 
+## 2026-08-17 — v1.08
+
+- Added All Files and Drill-Down modes to Space Analyzer, including a configurable default mode.
+- Added folder breadcrumb navigation in Drill-Down Mode and double-click navigation into folders.
+- Improved Drill-Down visualization with a WinDirStat-style proportional treemap that keeps smaller items visible while reflecting relative sizes.
+- Standardized folder tile colors in Drill-Down Mode to match the default folder color.
+- Fixed incorrect zero free-space reporting for network volumes and aligned Space Analyzer’s used/free capacity display with standard folder navigation.
+
 ## 2026-08-11 — v1.07
 
 - Added a dedicated Copy Queue tab beside Space Analyzer, with transfer progress that continues correctly while switching tabs.
