@@ -78,3 +78,7 @@ Current macOS 26 enhancements:
 - Liquid Glass surfaces for the toolbar button groups, filter field, path bar, and sidebar.
 - The About and Settings canvases use Liquid Glass cards, with color themes that extend across the app window and supporting sheets.
 - The Air color theme uses higher-transparency materials across app surfaces.
+
+## License
+
+MaXplorer is free software licensed under the [GNU General Public License version 3](LICENSE). You may redistribute and modify it under the terms of that license.
