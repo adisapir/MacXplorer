@@ -35,6 +35,9 @@ struct MaXplorerApp: App {
                 .onChange(of: settings.visibleColumns) { _, visibleColumns in
                     tabs.applyListingOptions(DirectoryListingOptions(columns: visibleColumns))
                 }
+                .onChange(of: settings.defaultSort) { _, _ in
+                    tabs.reapplyRememberedSorts()
+                }
         }
         .defaultSize(width: 1180, height: 720)
         .commands {
@@ -252,6 +255,7 @@ struct MaXplorerApp: App {
 
         Settings {
             SettingsView()
+                .environmentObject(tabs)
                 .environmentObject(settings)
                 .environment(\.appColorTheme, settings.colorTheme)
                 .preferredColorScheme(settings.preferredColorScheme)

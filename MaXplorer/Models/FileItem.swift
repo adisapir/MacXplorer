@@ -18,6 +18,7 @@ struct FileItem: Identifiable, Hashable, Sendable {
     let createdAt: Date?
     let dateTaken: Date?
     let owner: String?
+    let tagColors: [FinderTagColor]
     let isNetworkLocation: Bool
 
     nonisolated init(
@@ -36,6 +37,7 @@ struct FileItem: Identifiable, Hashable, Sendable {
         createdAt: Date? = nil,
         dateTaken: Date? = nil,
         owner: String? = nil,
+        tagColors: [FinderTagColor] = [],
         isNetworkLocation: Bool = false
     ) {
         self.url = url
@@ -53,6 +55,7 @@ struct FileItem: Identifiable, Hashable, Sendable {
         self.createdAt = createdAt
         self.dateTaken = dateTaken
         self.owner = owner
+        self.tagColors = tagColors
         self.isNetworkLocation = isNetworkLocation
     }
 }

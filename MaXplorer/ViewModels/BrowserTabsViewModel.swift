@@ -29,7 +29,7 @@ final class BrowserTabsViewModel: ObservableObject {
     // stay stuck at their launch-time value and their keyboard shortcuts never
     // fire once enabled.
     private var activeModelObservation: AnyCancellable?
-    private var listingOptions = DirectoryListingOptions()
+    private var listingOptions = DirectoryListingOptions(columns: FileColumn.defaultVisible)
     private let fileClipboard: FileClipboard
     private let favoritesStore: FavoritesStore
     private let copyQueue: CopyQueueViewModel
@@ -169,6 +169,14 @@ final class BrowserTabsViewModel: ObservableObject {
         listingOptions = options
         for tab in tabs {
             tab.model.setListingOptions(options)
+        }
+    }
+
+    /// Re-applies each tab's remembered sort, e.g. after the default sort
+    /// changed in Settings.
+    func reapplyRememberedSorts() {
+        for tab in tabs {
+            tab.model.reapplyRememberedSort()
         }
     }
 

@@ -1134,6 +1134,12 @@ private struct BrowserToolbar: View {
                                 .disabled(column.isRequired)
                             }
                         }
+
+                        Divider()
+
+                        Button("Reset Columns") {
+                            settings.resetColumns()
+                        }
                     } label: {
                         Image(systemName: "slider.horizontal.3")
                             .font(.system(size: 14, weight: .semibold))
@@ -1143,7 +1149,7 @@ private struct BrowserToolbar: View {
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
-                    .modernTooltip("Choose which columns are shown")
+                    .modernTooltip("Choose which columns are shown (or right-click a column header)")
                 }
 
                 Spacer(minLength: 12)
@@ -1781,60 +1787,60 @@ private struct FileTableView: View {
     @State private var isDropTargeted = false
     @State private var folderDropTargetID: FileItem.ID?
 
-    private var columns: Set<FileColumn> { settings.visibleColumns }
-
     var body: some View {
         ZStack {
+            // Column customization gives the header the native right-click
+            // menu for showing and hiding columns (as in Finder), plus
+            // drag-to-reorder and remembered widths. Every column is declared
+            // here; visibility comes from the customization, which AppSettings
+            // keeps in sync with the toolbar column chooser.
             Table(model.displayedItems, selection: Binding(
                 get: { model.selectedItemIDs },
                 set: { model.selectedItemIDs = $0 }
-            ), sortOrder: $model.sortOrder) {
+            ), sortOrder: $model.sortOrder, columnCustomization: $settings.columnCustomization) {
                 TableColumn("Name", value: \.name) { item in
                     nameCell(for: item)
                 }
                 .width(min: 220, ideal: 320)
+                .customizationID(FileColumn.name.id)
+                // Like Finder, Name is always shown and cannot be hidden.
+                .disabledCustomizationBehavior(.visibility)
 
-                if columns.contains(.kind) {
-                    TableColumn("Kind", value: \.displayKind) { item in
-                        columnText(item.displayKind, for: item)
-                    }
-                    .width(min: 120, ideal: 170)
+                TableColumn("Kind", value: \.displayKind) { item in
+                    columnText(item.displayKind, for: item)
                 }
+                .width(min: 120, ideal: 170)
+                .customizationID(FileColumn.kind.id)
 
-                if columns.contains(.size) {
-                    TableColumn("Size", value: \.sortSize) { item in
-                        columnText(item.displaySize, for: item, monospacedDigit: true)
-                    }
-                    .width(min: 80, ideal: 110)
+                TableColumn("Size", value: \.sortSize) { item in
+                    columnText(item.displaySize, for: item, monospacedDigit: true)
                 }
+                .width(min: 80, ideal: 110)
+                .customizationID(FileColumn.size.id)
 
-                if columns.contains(.dateModified) {
-                    TableColumn("Date Modified", value: \.sortModifiedAt) { item in
-                        columnText(item.displayModified, for: item)
-                    }
-                    .width(min: 150, ideal: 180)
+                TableColumn("Date Modified", value: \.sortModifiedAt) { item in
+                    columnText(item.displayModified, for: item)
                 }
+                .width(min: 150, ideal: 180)
+                .customizationID(FileColumn.dateModified.id)
 
-                if columns.contains(.dateCreated) {
-                    TableColumn("Date Created", value: \.sortCreatedAt) { item in
-                        columnText(item.displayCreated, for: item)
-                    }
-                    .width(min: 150, ideal: 180)
+                TableColumn("Date Created", value: \.sortCreatedAt) { item in
+                    columnText(item.displayCreated, for: item)
                 }
+                .width(min: 150, ideal: 180)
+                .customizationID(FileColumn.dateCreated.id)
 
-                if columns.contains(.dateTaken) {
-                    TableColumn("Date Taken", value: \.sortDateTaken) { item in
-                        columnText(item.displayDateTaken, for: item)
-                    }
-                    .width(min: 150, ideal: 180)
+                TableColumn("Date Taken", value: \.sortDateTaken) { item in
+                    columnText(item.displayDateTaken, for: item)
                 }
+                .width(min: 150, ideal: 180)
+                .customizationID(FileColumn.dateTaken.id)
 
-                if columns.contains(.owner) {
-                    TableColumn("Owner", value: \.sortOwner) { item in
-                        columnText(item.displayOwner, for: item)
-                    }
-                    .width(min: 100, ideal: 140)
+                TableColumn("Owner", value: \.sortOwner) { item in
+                    columnText(item.displayOwner, for: item)
                 }
+                .width(min: 100, ideal: 140)
+                .customizationID(FileColumn.owner.id)
             }
             .alternatingRowBackgrounds(settings.showsBandedFileRows ? .enabled : .disabled)
             .listRowSeparator(settings.showsBandedFileRows ? .visible : .hidden)
@@ -2253,6 +2259,10 @@ private struct FileItemIcon: View {
     let item: FileItem
     let folderIconStyle: FolderIconStyle
 
+    private var isPlainFolder: Bool {
+        item.isDirectory && !item.isPackage
+    }
+
     var body: some View {
         Group {
             if item.isNetworkLocation {
@@ -2266,15 +2276,71 @@ private struct FileItemIcon: View {
                     .foregroundStyle(.yellow)
                     .font(.system(size: 17, weight: .medium))
             } else {
-                // NSWorkspace returns the exact same icon Finder shows:
-                // correct type-specific icons for documents, apps, aliases (with
-                // arrow badge), packages, and all folder variants.
-                Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
+                Image(nsImage: FileIconCache.icon(for: item, untinted: isPlainFolder && !item.tagColors.isEmpty))
                     .resizable()
                     .interpolation(.high)
             }
         }
         .frame(width: 20, height: 20)
+        .overlay(alignment: isPlainFolder ? .center : .bottomTrailing) {
+            if !item.tagColors.isEmpty {
+                FinderTagDots(colors: item.tagColors)
+                    // Sit inside the folder's body, just below the tab.
+                    .offset(x: isPlainFolder ? 0 : 2, y: 2)
+            }
+        }
+    }
+}
+
+/// Finder-style overlapping tag dots, drawn inside the item's icon instead of
+/// tinting the whole folder.
+private struct FinderTagDots: View {
+    let colors: [FinderTagColor]
+
+    var body: some View {
+        HStack(spacing: -3) {
+            ForEach(colors, id: \.self) { tagColor in
+                Circle()
+                    .fill(tagColor.color)
+                    .frame(width: 7, height: 7)
+                    .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1))
+            }
+        }
+        .shadow(color: .black.opacity(0.25), radius: 0.5, y: 0.5)
+        .accessibilityLabel("Tagged")
+    }
+}
+
+/// NSWorkspace returns the exact same icon Finder shows: correct type-specific
+/// icons for documents, apps, aliases (with arrow badge), packages, and all
+/// folder variants. Looking it up is not free, so rows reuse cached images
+/// instead of asking again every time the table re-renders or re-sorts.
+private enum FileIconCache {
+    private static let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 4000
+        return cache
+    }()
+
+    private static let plainFolderIcon = NSWorkspace.shared.icon(for: .folder)
+
+    /// `untinted` swaps in the generic folder icon, because Finder tints the
+    /// icon of a tagged folder with its tag color and the tag is shown as a dot
+    /// instead.
+    static func icon(for item: FileItem, untinted: Bool) -> NSImage {
+        if untinted {
+            return plainFolderIcon
+        }
+
+        let modified = item.modifiedAt?.timeIntervalSinceReferenceDate ?? 0
+        let key = "\(item.url.path)|\(modified)" as NSString
+        if let icon = cache.object(forKey: key) {
+            return icon
+        }
+
+        let icon = NSWorkspace.shared.icon(forFile: item.url.path)
+        cache.setObject(icon, forKey: key)
+        return icon
     }
 }
 

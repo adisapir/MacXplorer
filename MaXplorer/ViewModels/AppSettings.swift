@@ -17,6 +17,7 @@ final class AppSettings: ObservableObject {
     private static let folderIconStyleKey = "FolderIconStyle"
     private static let colorThemeKey = "AppColorTheme"
     private static let defaultSpaceAnalyzerModeKey = "DefaultSpaceAnalyzerMode"
+    private static let columnCustomizationKey = "FileTableColumnCustomization"
     static let maximumConcurrentTabsRange = 5...50
     static let manualFolderHistoryLimitRange = 0...20
     static let maximumConcurrentCopiedFilesRange = 1...5
@@ -111,6 +112,39 @@ final class AppSettings: ObservableObject {
             }
 
             UserDefaults.standard.set(visibleColumns.map(\.rawValue), forKey: Self.visibleColumnsKey)
+            syncColumnCustomization()
+        }
+    }
+
+    /// Column order, widths, and visibility of the file table. Visibility is
+    /// mirrored with `visibleColumns`, so the header's right-click menu and the
+    /// toolbar column chooser always agree.
+    @Published var columnCustomization: TableColumnCustomization<FileItem> {
+        didSet {
+            guard columnCustomization != oldValue else {
+                return
+            }
+
+            if let data = try? JSONEncoder().encode(columnCustomization) {
+                UserDefaults.standard.set(data, forKey: Self.columnCustomizationKey)
+            }
+
+            let shownColumns = Set(FileColumn.allCases.filter { Self.isColumnVisible($0, in: columnCustomization) })
+            if shownColumns != visibleColumns {
+                visibleColumns = shownColumns
+            }
+        }
+    }
+
+    @Published var defaultSortColumn: FileColumn {
+        didSet {
+            FolderSortStore.shared.defaultSort = defaultSort
+        }
+    }
+
+    @Published var defaultSortAscending: Bool {
+        didSet {
+            FolderSortStore.shared.defaultSort = defaultSort
         }
     }
 
@@ -153,6 +187,15 @@ final class AppSettings: ObservableObject {
         } else {
             self.visibleColumns = FileColumn.defaultVisible
         }
+        self.columnCustomization = defaults.data(forKey: Self.columnCustomizationKey)
+            .flatMap { try? JSONDecoder().decode(TableColumnCustomization<FileItem>.self, from: $0) }
+            ?? TableColumnCustomization<FileItem>()
+
+        let defaultSort = FolderSortStore.shared.defaultSort
+        self.defaultSortColumn = defaultSort.column
+        self.defaultSortAscending = defaultSort.ascending
+
+        syncColumnCustomization()
 
         trimManualFolderHistory()
         trimServerConnectionHistory()
@@ -178,6 +221,20 @@ final class AppSettings: ObservableObject {
                 self?.recordPendingConnection(mountedAt: mountedVolumeURL)
             }
         }
+    }
+
+    var defaultSort: FileSortDescriptor {
+        FileSortDescriptor(column: defaultSortColumn, ascending: defaultSortAscending)
+    }
+
+    func forgetFolderSortChoices() {
+        FolderSortStore.shared.forgetAllFolders()
+    }
+
+    /// Restores the default columns, column order, and widths.
+    func resetColumns() {
+        columnCustomization = TableColumnCustomization<FileItem>()
+        visibleColumns = FileColumn.defaultVisible
     }
 
     var preferredColorScheme: ColorScheme {
@@ -226,6 +283,32 @@ final class AppSettings: ObservableObject {
             if recordPendingConnection(mountedAt: mountedVolumeURL) {
                 break
             }
+        }
+    }
+
+    private func syncColumnCustomization() {
+        var customization = columnCustomization
+        for column in FileColumn.allCases where !column.isRequired {
+            customization[visibility: column.id] = visibleColumns.contains(column) ? .visible : .hidden
+        }
+
+        if customization != columnCustomization {
+            columnCustomization = customization
+        }
+    }
+
+    private static func isColumnVisible(_ column: FileColumn, in customization: TableColumnCustomization<FileItem>) -> Bool {
+        guard !column.isRequired else {
+            return true
+        }
+
+        switch customization[visibility: column.id] {
+        case .visible:
+            return true
+        case .hidden:
+            return false
+        default:
+            return FileColumn.defaultVisible.contains(column)
         }
     }
 
