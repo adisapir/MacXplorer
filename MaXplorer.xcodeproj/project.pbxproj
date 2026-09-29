@@ -103,11 +103,11 @@
 			);
 			mainGroup = DDC3BAFD2FF5524A009477D7;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
-			productRefGroup = DDC3BB072FF5524A009477D7 /* Products */;
 			packageReferences = (
 				A10000000000000000000002 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = DDC3BB072FF5524A009477D7 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
