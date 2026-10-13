@@ -329,7 +329,11 @@ private final class WindowAppearanceView: NSView {
         }
 
         guard let window else { return }
-        window.titlebarAppearsTransparent = colorTheme != .default
+        // Always transparent: with an opaque titlebar, NavigationSplitView's NSSplitView
+        // draws a titlebar-height background (NSTitlebarBackgroundView) across the top of
+        // the detail column. Our tab strip pushes the split view below the real titlebar,
+        // so that band covers the browser toolbar. backgroundColor still tints the titlebar.
+        window.titlebarAppearsTransparent = true
         window.backgroundColor = titlebarBackgroundColor
     }
 
