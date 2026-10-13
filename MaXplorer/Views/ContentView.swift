@@ -810,14 +810,18 @@ private struct SidebarView: View {
                     return
                 }
 
-                switch selection {
-                case spaceAnalyzerSelectionID:
-                    tabs.openSpaceAnalyzer()
-                case copyQueueSelectionID:
-                    tabs.showCopyQueue()
-                default:
-                    if let url = URL(string: selection) {
-                        tabs.browseLocation(url)
+                // List can write its selection during a view update; defer so the
+                // navigation's @Published changes land outside that update.
+                Task { @MainActor in
+                    switch selection {
+                    case spaceAnalyzerSelectionID:
+                        tabs.openSpaceAnalyzer()
+                    case copyQueueSelectionID:
+                        tabs.showCopyQueue()
+                    default:
+                        if let url = URL(string: selection) {
+                            tabs.browseLocation(url)
+                        }
                     }
                 }
             }
