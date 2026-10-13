@@ -36,7 +36,15 @@ final class FileBrowserViewModel: ObservableObject {
     private static let networkRootURL = URL(string: "maxplorer://network")!
 
     @Published private(set) var currentURL: URL
-    @Published private(set) var items: [FileItem] = []
+    @Published private(set) var items: [FileItem] = [] {
+        didSet {
+            resortItems()
+        }
+    }
+    /// `items` sorted and filtered for display. Kept as stored state and only
+    /// rebuilt when the items, sort, or filter change, because the table,
+    /// status bar, and selection logic all read it on every render.
+    @Published private(set) var displayedItems: [FileItem] = []
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
     @Published var isConnectToServerPresented = false
@@ -44,10 +52,23 @@ final class FileBrowserViewModel: ObservableObject {
     @Published var detailDestination: DetailDestination = .files
     @Published var copyConflictRequest: CopyConflictRequest?
     @Published var pathText: String
-    @Published var filterText = ""
+    @Published var filterText = "" {
+        didSet {
+            guard filterText != oldValue else { return }
+            refilterItems()
+        }
+    }
     let filterFocusProxy = FilterFocusProxy()
     @Published var selectedItemIDs: Set<FileItem.ID> = []
-    @Published var sortOrder = [KeyPathComparator(\FileItem.name)]
+    @Published var sortOrder = FileSortDescriptor.fallback.comparators {
+        didSet {
+            guard sortOrder != oldValue else { return }
+            resortItems()
+            if !isRestoringSort, let sort = FileSortDescriptor(sortOrder) {
+                FolderSortStore.shared.remember(sort, for: currentURL)
+            }
+        }
+    }
     @Published var renameRequest: FileItem?
     @Published var trashRequest: [FileItem] = []
     @Published var quickViewContent: QuickViewContent?
@@ -56,7 +77,12 @@ final class FileBrowserViewModel: ObservableObject {
             reload()
         }
     }
-    @Published var showAliases = true
+    @Published var showAliases = true {
+        didSet {
+            guard showAliases != oldValue else { return }
+            refilterItems()
+        }
+    }
     @Published var isIntegratedTerminalPresented = false
     @Published var isReadmePresented = false
 
@@ -70,13 +96,15 @@ final class FileBrowserViewModel: ObservableObject {
     private var loadGeneration = 0
     private var selectionAnchorID: FileItem.ID?
     private var destinationBeforeAuxiliaryDetail: DetailDestination = .files
-    private var listingOptions = DirectoryListingOptions()
+    private var listingOptions = DirectoryListingOptions(columns: FileColumn.defaultVisible)
     private var conflictSession: ConflictSession?
     private var conflictPreparationGeneration = 0
     private var folderMonitor: DispatchSourceFileSystemObject?
     private var monitorReloadTask: Task<Void, Never>?
     private var clipboardObservation: AnyCancellable?
     private var favoritesObservation: AnyCancellable?
+    private var sortedItems: [FileItem] = []
+    private var isRestoringSort = false
 
     private struct ConflictSession {
         nonisolated enum Operation: Sendable {
@@ -109,6 +137,7 @@ final class FileBrowserViewModel: ObservableObject {
         self.copyQueue = copyQueue
         self.currentURL = homeURL
         self.pathText = homeURL.path
+        self.sortOrder = FolderSortStore.shared.sort(for: homeURL).comparators
         self.copyQueue.observeItemCompletions { [weak self] destinationURL in
             guard let self, destinationURL.deletingLastPathComponent().standardizedFileURL == self.currentURL.standardizedFileURL else {
                 return
@@ -141,10 +170,6 @@ final class FileBrowserViewModel: ObservableObject {
         folderMonitor?.cancel()
     }
 
-    var displayedItems: [FileItem] {
-        filteredItems.sorted(using: sortOrder)
-    }
-
     var cutItemURLs: [URL] {
         fileClipboard.cutItemURLs
     }
@@ -161,10 +186,19 @@ final class FileBrowserViewModel: ObservableObject {
         favoritesStore.removedBuiltInURLs
     }
 
-    private var filteredItems: [FileItem] {
-        let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func resortItems() {
+        sortedItems = FileSorter.sorted(items, by: FileSortDescriptor(sortOrder) ?? FolderSortStore.shared.defaultSort)
+        refilterItems()
+    }
 
-        return items.filter { item in
+    private func refilterItems() {
+        let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty || !showAliases else {
+            displayedItems = sortedItems
+            return
+        }
+
+        displayedItems = sortedItems.filter { item in
             if !showAliases && item.isAlias {
                 return false
             }
@@ -377,8 +411,19 @@ final class FileBrowserViewModel: ObservableObject {
         currentURL = url
         pathText = url == Self.networkRootURL ? "Network" : url.path
         filterText = ""
+        reapplyRememberedSort()
         startMonitoringCurrentFolder()
         reload()
+    }
+
+    /// Restores the sort remembered for the current folder, or the default
+    /// sort from Settings, without recording it as a new choice.
+    func reapplyRememberedSort() {
+        let comparators = FolderSortStore.shared.sort(for: currentURL).comparators
+        guard comparators != sortOrder else { return }
+        isRestoringSort = true
+        sortOrder = comparators
+        isRestoringSort = false
     }
 
     func showReadme() {

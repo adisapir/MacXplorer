@@ -63,12 +63,10 @@ final class SpaceAnalyzerViewModel: ObservableObject {
         scanState = .scanning(scannedCount: 0)
         scanTask = Task {
             do {
-                let root = try await SpaceScanner.scan(url: url) { [weak self] count in
-                    await MainActor.run {
-                        if case .scanning = self?.scanState {
-                            self?.scanState = .scanning(scannedCount: count)
-                        }
-                    }
+                // The enclosing Task already holds self strongly until the scan
+                // finishes, so a weak capture here would buy nothing.
+                let root = try await SpaceScanner.scan(url: url) { count in
+                    await self.updateScanProgress(count)
                 }
                 if !Task.isCancelled {
                     scanState = .ready(root: root)
@@ -81,6 +79,12 @@ final class SpaceAnalyzerViewModel: ObservableObject {
                 scanState = .failed(error.localizedDescription)
                 scanTask = nil
             }
+        }
+    }
+
+    private func updateScanProgress(_ count: Int) {
+        if case .scanning = scanState {
+            scanState = .scanning(scannedCount: count)
         }
     }
 }

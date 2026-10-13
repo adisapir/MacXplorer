@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var tabs: BrowserTabsViewModel
 
     var body: some View {
         Form {
@@ -35,6 +36,31 @@ struct SettingsView: View {
                     .labelsHidden()
                     .pickerStyle(.segmented)
                     .frame(width: 230)
+                }
+            }
+
+            Section("Sorting") {
+                Picker("Default Sort By", selection: $settings.defaultSortColumn) {
+                    ForEach(FileSortDescriptor.defaultSortColumns) { column in
+                        Text(column.title).tag(column)
+                    }
+                }
+
+                Picker("Default Order", selection: $settings.defaultSortAscending) {
+                    Text("Ascending").tag(true)
+                    Text("Descending").tag(false)
+                }
+                .pickerStyle(.segmented)
+
+                HStack {
+                    Text("MaXplorer remembers the sort you choose in each folder. Folders you have not sorted use the default.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Forget Folder Sorts") {
+                        settings.forgetFolderSortChoices()
+                        tabs.reapplyRememberedSorts()
+                    }
                 }
             }
 

@@ -35,6 +35,9 @@ struct MaXplorerApp: App {
                 .onChange(of: settings.visibleColumns) { _, visibleColumns in
                     tabs.applyListingOptions(DirectoryListingOptions(columns: visibleColumns))
                 }
+                .onChange(of: settings.defaultSort) { _, _ in
+                    tabs.reapplyRememberedSorts()
+                }
         }
         .defaultSize(width: 1180, height: 720)
         .commands {
@@ -252,6 +255,7 @@ struct MaXplorerApp: App {
 
         Settings {
             SettingsView()
+                .environmentObject(tabs)
                 .environmentObject(settings)
                 .environment(\.appColorTheme, settings.colorTheme)
                 .preferredColorScheme(settings.preferredColorScheme)
@@ -325,7 +329,11 @@ private final class WindowAppearanceView: NSView {
         }
 
         guard let window else { return }
-        window.titlebarAppearsTransparent = colorTheme != .default
+        // Always transparent: with an opaque titlebar, NavigationSplitView's NSSplitView
+        // draws a titlebar-height background (NSTitlebarBackgroundView) across the top of
+        // the detail column. Our tab strip pushes the split view below the real titlebar,
+        // so that band covers the browser toolbar. backgroundColor still tints the titlebar.
+        window.titlebarAppearsTransparent = true
         window.backgroundColor = titlebarBackgroundColor
     }
 

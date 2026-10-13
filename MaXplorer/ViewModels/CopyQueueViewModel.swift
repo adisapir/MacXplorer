@@ -294,12 +294,12 @@ final class CopyQueueViewModel: ObservableObject {
                     sourceURL: sourceURL,
                     destinationURL: destinationURL,
                     overwrite: shouldOverwrite
-                ) { [weak self] copiedBytes in
+                ) { copiedBytes in
                     guard progressThrottle.shouldPublish() else {
                         return
                     }
-                    Task { @MainActor [weak self] in
-                        self?.updateCopiedBytes(copiedBytes, for: itemID)
+                    Task { @MainActor in
+                        self.updateCopiedBytes(copiedBytes, for: itemID)
                     }
                 }
 
@@ -438,7 +438,7 @@ private enum CopyWorker {
     /// SMB metadata and streaming calls can monopolize several kernel worker
     /// threads at once even when Swift tasks use a low priority. Keep remote
     /// filesystem work on one lane so AppKit input and drawing stay responsive.
-    private static let networkIOLock = NSLock()
+    nonisolated private static let networkIOLock = NSLock()
 
     static func totalByteCount(for url: URL) async throws -> Int64 {
         let worker = Task.detached(priority: .background) {

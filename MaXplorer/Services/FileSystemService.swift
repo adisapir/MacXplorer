@@ -40,14 +40,18 @@ nonisolated enum VolumeCapacityReader {
 
 /// Controls whether the (potentially slow) per-file metadata is fetched during
 /// a listing. Owner resolution and image capture-date reads are only worth
-/// paying for when their columns are visible, so they default to off.
+/// paying for when their columns are visible, so they default to off. Finder
+/// tag colors cost one extended-attribute read per item, which is cheap locally
+/// but a round trip on network volumes, so they are opt-in as well.
 struct DirectoryListingOptions: Equatable, Sendable {
     var includeOwner: Bool
     var includeDateTaken: Bool
+    var includeTags: Bool
 
-    init(includeOwner: Bool = false, includeDateTaken: Bool = false) {
+    init(includeOwner: Bool = false, includeDateTaken: Bool = false, includeTags: Bool = false) {
         self.includeOwner = includeOwner
         self.includeDateTaken = includeDateTaken
+        self.includeTags = includeTags
     }
 }
 protocol FileSystemService: Sendable {
@@ -116,14 +120,9 @@ struct LocalFileSystemService: FileSystemService {
                 }
             }
 
-            let itemsWithOpensInApp = items.map { ($0, $0.opensInApp) }
-            let sortedItems = itemsWithOpensInApp.sorted { lhs, rhs in
-                if lhs.1 != rhs.1 {
-                    return lhs.1 && !rhs.1
-                }
-                return lhs.0.name.localizedStandardCompare(rhs.0.name) == .orderedAscending
-            }
-            return sortedItems.map { $0.0 }
+            // Display order is applied by the browser (FileSorter), so the
+            // listing is returned unsorted rather than sorting it twice.
+            return items
         }.value
     }
 
@@ -298,6 +297,7 @@ struct LocalFileSystemService: FileSystemService {
             ? (try? FileManager.default.attributesOfItem(atPath: itemURL.path))?[.ownerAccountName] as? String
             : nil
         let dateTaken = options.includeDateTaken ? Self.captureDate(for: itemURL) : nil
+        let tagColors = options.includeTags ? FinderTagReader.tagColors(for: itemURL) : []
 
         return FileItem(
             url: itemURL,
@@ -314,7 +314,8 @@ struct LocalFileSystemService: FileSystemService {
             modifiedAt: values.contentModificationDate,
             createdAt: values.creationDate,
             dateTaken: dateTaken,
-            owner: owner
+            owner: owner,
+            tagColors: tagColors
         )
     }
 

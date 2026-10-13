@@ -1,5 +1,15 @@
 # Change Log
 
+## 2026-10-13 — v1.09
+
+- Added Finder tag color dots to file and folder icons.
+- Remembered sort order per folder, with a configurable default sort field and order in Settings.
+- Added a native column header menu to show or hide columns, synced with the toolbar column chooser, plus Reset Columns.
+- Improved listing performance by caching sorted and filtered items.
+- Fixed the browser toolbar (navigation buttons and filter field) being hidden on macOS 27 with the Default theme.
+- Fixed sidebar navigation publishing state changes during view updates.
+- Raised the minimum macOS version to 26 and resolved Swift concurrency warnings.
+
 ## 2026-08-17 — v1.08
 
 - Added All Files and Drill-Down modes to Space Analyzer, including a configurable default mode.
