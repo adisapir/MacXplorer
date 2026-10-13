@@ -1168,7 +1168,12 @@ private struct BrowserToolbar: View {
                 .font(.system(size: 13, weight: .medium))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
+                // Glass goes behind the field rather than wrapping it: content inside
+                // .glassEffect gets a plus-lighter compositing filter, which washes
+                // out the AppKit-backed FilterTextField's text and placeholder.
+                .background {
+                    Color.clear.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
+                }
                 .layoutPriority(1)
                 .modernTooltip("Filter items shown in the current folder")
             }
