@@ -335,6 +335,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26;
 				MARKETING_VERSION = 1.08;
 				PRODUCT_BUNDLE_IDENTIFIER = doccolabs.MaXplorer;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -371,6 +372,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26;
 				MARKETING_VERSION = 1.08;
 				PRODUCT_BUNDLE_IDENTIFIER = doccolabs.MaXplorer;
 				PRODUCT_NAME = "$(TARGET_NAME)";

@@ -1,7 +1,7 @@
 import Foundation
 import CoreGraphics
 
-final class SpaceNode: Identifiable, @unchecked Sendable {
+nonisolated final class SpaceNode: Identifiable, @unchecked Sendable {
     let id = UUID()
     let url: URL
     let name: String

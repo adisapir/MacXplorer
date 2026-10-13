@@ -14,6 +14,7 @@ struct ContentView: View {
                 .environmentObject(tabs.activeModel)
         }
         .onAppear {
+            let tabs = tabs
             settings.onServerConnectionSucceeded = { [weak tabs] mountedVolumeURL in
                 tabs?.openLocationInNewTab(mountedVolumeURL)
             }
